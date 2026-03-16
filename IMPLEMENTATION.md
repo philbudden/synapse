@@ -136,7 +136,6 @@ The compose profile `matrix` adds three services:
 
 Homeserver config:
 - `MATRIX_SERVER_NAME` (default `localhost`)
-- `MATRIX_PUBLIC_HOST` (what clients connect to on LAN/VPN/Tailscale)
 - `MATRIX_HTTP_PORT` (default `8008`)
 - `MATRIX_TLS_PORT` (default `8448`)
 - `MATRIX_REPORT_STATS` (default `no`)

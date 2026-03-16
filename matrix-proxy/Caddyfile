@@ -2,11 +2,21 @@
   storage file_system {
     root /data
   }
+
+  # On-demand TLS is used so clients can connect via LAN IP / Tailnet IP / MagicDNS.
+  # Add a minimal rate limit to reduce abuse risk.
+  on_demand_tls {
+    interval 2m
+    burst 10
+  }
 }
 
 # Local TLS proxy for Matrix client-server API.
-# Set MATRIX_PUBLIC_HOST to your LAN/VPN/Tailscale name or IP.
-{$MATRIX_PUBLIC_HOST}:{$MATRIX_TLS_PORT} {
-  tls internal
+# Listen on all interfaces and provision a local (internal CA) certificate on-demand
+# for whatever hostname/IP the client uses (LAN IP, Tailnet IP, MagicDNS name).
+:{$MATRIX_TLS_PORT} {
+  tls internal {
+    on_demand
+  }
   reverse_proxy matrix-synapse:8008
 }

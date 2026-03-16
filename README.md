@@ -52,8 +52,10 @@ docker compose --profile matrix up -d --build
 
 Configure these in `.env`:
 - `MATRIX_SERVER_NAME` (domain used in Matrix IDs, e.g. `localhost`)
-- `MATRIX_PUBLIC_HOST` (what your phone will connect to on your LAN/VPN/Tailscale, e.g. `192.168.1.10`)
 - `MATRIX_TLS_PORT` (default `8448`)
+
+You can connect from Element X using **either** your LAN IP or Tailnet IP:
+- `https://<lan-ip>:8448` or `https://<tailnet-ip>:8448`
 
 Notes:
 - On first start, Synapse generates `homeserver.yaml` into its persistent `/data` volume. If you change `MATRIX_SERVER_NAME` later, wipe the Matrix volume (`docker compose down -v`) to regenerate.
