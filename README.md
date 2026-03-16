@@ -74,6 +74,10 @@ Option A (simplest, local-only HTTP):
 - Homeserver URL: `http://<host>:8008`
 - Example: `http://mac-workstation:8008`
 
+Account creation note (Element X):
+- Recent Element X builds may not support **in-app sign up** on classic-password homeservers without a Matrix Authentication Service (MAS).
+- Workaround: create the user on the server (command below), then use **Sign in** in Element X.
+
 Option B (HTTPS via TLS proxy):
 - Preferred: `https://<host>` (port **443**)
 - Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
@@ -87,6 +91,19 @@ TLS notes:
 - If iOS shows **“This Connection Is Not Private”**, you must either trust the CA root on the phone or use a publicly-trusted certificate.
 
 If you can’t get Tailscale TLS certs, prefer Option A (HTTP) for LAN-only.
+
+Create a local user (run on the host):
+
+```bash
+# creates @alice:<MATRIX_SERVER_NAME> with password
+docker compose --profile matrix exec -T matrix-synapse \
+  register_new_matrix_user -c /data/homeserver.yaml \
+  -u alice -p 'change-me' http://localhost:8008
+```
+
+Then in Element X choose **Sign in**, and enter:
+- Username: `@alice:${MATRIX_SERVER_NAME}` (default `@alice:localhost`)
+- Password: the one you set
 
 If you do have a publicly-trusted cert available, you can configure the proxy like this:
 

@@ -156,6 +156,10 @@ Element X connection URL:
 - Simplest (LAN-only): `http://<host>:8008`
 - HTTPS (TLS proxy): `https://<host>` (port 443) or `https://<host>:<MATRIX_TLS_PORT>`
 
+Account creation (Element X):
+- Element X may require MAS/OIDC for **in-app sign up**.
+- For this minimal stack, create users via `register_new_matrix_user` inside the Synapse container and then sign in from Element X.
+
 Caddy internal CA root cert path (inside the proxy container):
 - `/data/pki/authorities/local/root.crt`
 
