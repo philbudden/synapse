@@ -42,16 +42,16 @@ Postgres (pgvector)
    - Provides cosine-distance search via pgvector operators
 
 2. **API service** (`api/`)
-   - FastAPI app: `api/app/app/main.py`
+   - FastAPI app: `api/app/main.py`
    - Endpoints:
      - `POST /capture`
      - `GET /search`
    - Calls Ollama to generate embeddings
 
 3. **MCP service** (`mcp/`)
-   - FastAPI app: `mcp/server.py`
-   - Implements MCP **Streamable HTTP** endpoint at `POST /mcp`
-   - Translates MCP tool calls into API requests
+   - FastAPI app: `mcp/server.py` (Streamable HTTP)
+   - Stdio entrypoint: `mcp/stdio_server.py` (for desktop clients)
+   - Translates MCP tool calls into API requests (thin adapter; no business logic)
 
 ---
 
@@ -66,17 +66,21 @@ Postgres (pgvector)
 ├── api/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── app/app/
+│   └── app/
+│       ├── __init__.py
 │       ├── main.py
 │       ├── config.py
 │       ├── db.py
 │       ├── embeddings.py
 │       ├── models.py
 │       └── search.py
-└── mcp/
-    ├── Dockerfile
-    ├── requirements.txt
-    └── server.py
+├── mcp/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── server.py
+│   └── stdio_server.py
+└── docs/
+    └── architecture.md
 ```
 
 ---
@@ -148,12 +152,13 @@ Initialized by `db/init.sql`.
 CREATE INDEX memories_embedding_idx
 ON memories
 USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 1);
+WITH (lists = 100);
 ```
 
 Notes:
-- ivfflat is approximate. For correctness on very small datasets, `lists` is set to `1`.
-- As dataset size grows, increase `lists` (rule of thumb: `~sqrt(row_count)`) and run `ANALYZE`.
+- ivfflat is approximate; on very small datasets an index scan can occasionally be unhelpful.
+- The API includes a defensive fallback to an exact scan if an approximate search returns no rows.
+- For performance tuning as data grows, adjust `lists` and run `ANALYZE`.
 
 ---
 

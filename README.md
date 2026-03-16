@@ -51,13 +51,44 @@ Tools:
 - `capture_memory` `{ content: string, source?: string }`
 - `search_memories` `{ query: string, limit?: number }`
 
-### Example MCP client config (generic)
+### MCP client integration
 
-Many MCP-capable clients let you register an HTTP MCP server by URL. Configure the MCP endpoint as:
+#### ChatGPT connectors / HTTP MCP clients
+
+If your client supports MCP **Streamable HTTP**, configure the MCP endpoint URL as:
 
 - `http://localhost:8080/mcp`
 
-If your client asks for an “MCP server URL” or “endpoint”, use the URL above.
+#### Claude Desktop (stdio)
+
+Claude Desktop typically runs MCP servers over **stdio** (a local command).
+This repo includes a stdio entrypoint inside the MCP Docker image.
+
+Example `claude_desktop_config.json` snippet:
+
+```json
+{
+  "mcpServers": {
+    "synapse": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "API_BASE_URL=http://host.docker.internal:8000",
+        "synapse-mcp",
+        "python",
+        "/app/stdio_server.py"
+      ]
+    }
+  }
+}
+```
+
+Notes:
+- Ensure the Synapse stack is running (`docker compose up -d --build`).
+- On Linux, replace `host.docker.internal` with your host IP or another reachable hostname.
 
 ## Troubleshooting
 
