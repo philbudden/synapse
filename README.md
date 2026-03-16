@@ -165,10 +165,41 @@ curl -sS -X POST http://localhost:8008/_matrix/client/v3/login \
 
 Copy the `access_token` from the response.
 
-#### 4c) Create a room (your “inbox”)
+#### 4c) Create a room (your “inbox”) and get its Room ID
 
 1. Create a room (e.g. “Synapse Inbox”)
-2. In the room settings/info, copy the **Room ID** (it looks like `!abcdef:localhost`)
+
+Element X doesn’t always show the raw **Room ID** in the UI. You can fetch it from the homeserver.
+
+First, log in to the homeserver as your normal user (replace username/password):
+
+```bash
+curl -sS --max-time 10 -X POST http://localhost:8008/_matrix/client/v3/login \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"m.login.password","user":"alice","password":"change-me"}'
+```
+
+From that JSON response, copy the `access_token`.
+
+Now list the rooms you’ve joined — the returned values are **Room IDs**:
+
+- If you have `jq` installed:
+
+```bash
+curl -sS --max-time 10 http://localhost:8008/_matrix/client/v3/joined_rooms \
+  -H "Authorization: Bearer <PASTE_ACCESS_TOKEN>" \
+| jq -r '.joined_rooms[]'
+```
+
+- No `jq` installed (uses Python):
+
+```bash
+curl -sS --max-time 10 http://localhost:8008/_matrix/client/v3/joined_rooms \
+  -H "Authorization: Bearer <PASTE_ACCESS_TOKEN>" \
+| python3 -c 'import sys,json; print("\n".join(json.load(sys.stdin)["joined_rooms"]))'
+```
+
+Tip: send a message in your “Synapse Inbox” room first, then run the command — it’ll be easier to identify the right room.
 
 #### 4d) Configure + start the bot
 
