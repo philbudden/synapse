@@ -36,12 +36,12 @@ Memory API (FastAPI)
 Postgres (pgvector)
 
 Matrix User (Element X)
-  │  HTTPS (LAN/VPN)
-  ▼
-Matrix TLS Proxy (Caddy, internal CA)
+  │  HTTP (LAN/VPN, simplest)
+  ├──────────────► Matrix Synapse Homeserver (port 8008)
   │
+  │  HTTPS (optional)
   ▼
-Matrix Synapse Homeserver
+Matrix TLS Proxy (Caddy, internal CA) ─► Matrix Synapse Homeserver
 
 Matrix Bot (optional) ──calls──► Memory API
 ```
@@ -141,8 +141,11 @@ Homeserver config:
 - `MATRIX_REPORT_STATS` (default `no`)
 
 TLS proxy discovery config:
-- `MATRIX_PUBLIC_BASE_URL` (optional): what `/.well-known/matrix/client` returns for `m.homeserver.base_url`.
-  - Recommended: set this to the exact homeserver URL you’ll enter in Element X, e.g. `https://mac-workstation`.
+- `MATRIX_PUBLIC_BASE_URL` (recommended): the exact homeserver URL you’ll enter in Matrix clients.
+  - LAN-only (HTTP, simplest): `http://<host>:8008`
+  - HTTPS via proxy: `https://<host>` (port 443) or `https://<host>:<MATRIX_TLS_PORT>`
+
+  This is applied to Synapse as `public_baseurl` and (if using the TLS proxy) returned from `/.well-known/matrix/client`.
 - `MATRIX_PUBLIC_SERVER_NAME` (optional): what `/.well-known/matrix/server` returns for `m.server` (federation discovery).
 
 TLS proxy certificate options:

@@ -52,20 +52,20 @@ docker compose --profile matrix up -d --build
 
 Configure these in `.env`:
 - `MATRIX_SERVER_NAME` (domain used in Matrix IDs, e.g. `localhost`)
-- `MATRIX_TLS_PORT` (default `8448`)
-- `MATRIX_PUBLIC_BASE_URL` (recommended): the exact homeserver URL you will type into Element X, e.g. `https://mac-workstation` or `https://mac-workstation.<tailnet>.ts.net`
+- `MATRIX_PUBLIC_BASE_URL` (recommended): the exact homeserver URL you will type into your client.
+  - For the confirmed working local-only setup: `http://mac-workstation:8008`
 
-For best results on iOS, prefer a **hostname** (MagicDNS / .ts.net) on port **443**.
+(Optional, only if using the TLS proxy)
+- `MATRIX_TLS_PORT` (default `8448`)
 
 Notes:
 - On first start, Synapse generates `homeserver.yaml` into its persistent `/data` volume. If you change `MATRIX_SERVER_NAME` later, wipe the Matrix volume (`docker compose down -v`) to regenerate.
 - Registration is enabled by default for **LAN/VPN-only** convenience.
 
-Verify Matrix is up (TLS proxy):
+Verify Matrix is up (HTTP):
 
 ```bash
-# Port 443 is published to the proxy by default.
-curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}/_matrix/client/versions" | cat
+curl -fsS "http://${MATRIX_PUBLIC_HOST:-localhost}:8008/_matrix/client/versions" | cat
 ```
 
 ### Connect from Element X (LAN/VPN)
@@ -78,19 +78,11 @@ Account creation note (Element X):
 - Recent Element X builds may not support **in-app sign up** on classic-password homeservers without a Matrix Authentication Service (MAS).
 - Workaround: create the user on the server (command below), then use **Sign in** in Element X.
 
-Option B (HTTPS via TLS proxy):
+Option B (HTTPS via TLS proxy, optional):
 - Preferred: `https://<host>` (port **443**)
 - Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
 
-Examples:
-- `https://mac-workstation`
-- `https://mac-workstation:8448`
-
-TLS notes:
-- By default the proxy uses a local TLS certificate from Caddy’s **internal CA**.
-- If iOS shows **“This Connection Is Not Private”**, you must either trust the CA root on the phone or use a publicly-trusted certificate.
-
-If you can’t get Tailscale TLS certs, prefer Option A (HTTP) for LAN-only.
+Note: iOS clients typically require a *trusted* certificate chain. If you don’t want to manage TLS trust for a LAN-only server, stick with Option A (HTTP).
 
 Create a local user (run on the host):
 
@@ -105,31 +97,11 @@ Then in Element X choose **Sign in**, and enter:
 - Username: `@alice:${MATRIX_SERVER_NAME}` (default `@alice:localhost`)
 - Password: the one you set
 
-If you do have a publicly-trusted cert available, you can configure the proxy like this:
+If you *do* want HTTPS later, you’ll need either:
+- a publicly-trusted cert for a real DNS name, or
+- to install/trust the proxy’s internal CA root cert on iOS.
 
-1. On the host, generate a cert for your MagicDNS name:
-
-   ```bash
-   tailscale cert mac-workstation.tailXXXX.ts.net
-   ```
-
-2. Copy the generated `.crt` and `.key` into `./.local/matrix-tls/`.
-
-3. Set in `.env`:
-
-   ```bash
-   MATRIX_PUBLIC_BASE_URL=https://mac-workstation.tailXXXX.ts.net
-   MATRIX_TLS_CERT_FILE=/tls/mac-workstation.tailXXXX.ts.net.crt
-   MATRIX_TLS_KEY_FILE=/tls/mac-workstation.tailXXXX.ts.net.key
-   ```
-
-4. Restart:
-
-   ```bash
-   docker compose --profile matrix up -d
-   ```
-
-Otherwise (internal CA path), install and trust the CA root certificate on your phone:
+Internal CA path (copy root cert from proxy container):
 
 1. Find the proxy container name:
 
