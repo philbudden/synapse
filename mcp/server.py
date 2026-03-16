@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+import uuid
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +29,53 @@ settings = Settings()
 SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-03-26"]
 
 app = FastAPI(title="Synapse MCP", version="0.1.0")
+
+
+@dataclass
+class _Session:
+    queue: asyncio.Queue[str]
+    last_activity: float
+
+
+_SESSIONS: dict[str, _Session] = {}
+_SESSIONS_LOCK = asyncio.Lock()
+_SSE_KEEPALIVE_SECONDS = 15
+_SESSION_TTL_SECONDS = 60 * 60
+
+
+def _sse_message(payload: dict[str, Any]) -> str:
+    data = json.dumps(payload, ensure_ascii=False)
+    return f"event: message\ndata: {data}\n\n"
+
+
+async def _create_session() -> str:
+    session_id = str(uuid.uuid4())
+    async with _SESSIONS_LOCK:
+        _SESSIONS[session_id] = _Session(queue=asyncio.Queue(), last_activity=time.time())
+    return session_id
+
+
+async def _get_session(session_id: str) -> _Session | None:
+    async with _SESSIONS_LOCK:
+        s = _SESSIONS.get(session_id)
+        if s is None:
+            return None
+        if time.time() - s.last_activity > _SESSION_TTL_SECONDS:
+            _SESSIONS.pop(session_id, None)
+            return None
+        return s
+
+
+async def _touch_session(session_id: str) -> None:
+    async with _SESSIONS_LOCK:
+        s = _SESSIONS.get(session_id)
+        if s is not None:
+            s.last_activity = time.time()
+
+
+async def _delete_session(session_id: str) -> None:
+    async with _SESSIONS_LOCK:
+        _SESSIONS.pop(session_id, None)
 
 
 def _origin_allowed(origin: str | None) -> bool:
@@ -128,19 +180,53 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/mcp/openapi.json")
+async def mcp_openapi() -> JSONResponse:
+    # Some clients probe for this under the MCP path.
+    return JSONResponse(app.openapi())
+
+
 @app.get("/mcp")
 async def mcp_get(origin: str | None = Header(default=None)) -> Response:
     if not _origin_allowed(origin):
         raise HTTPException(status_code=403, detail="Origin not allowed")
-    # Minimal server: we don't support a standalone SSE stream.
-    return Response(status_code=405)
+
+    session_id = await _create_session()
+
+    async def event_stream():
+        try:
+            while True:
+                s = await _get_session(session_id)
+                if s is None:
+                    return
+                try:
+                    msg = await asyncio.wait_for(s.queue.get(), timeout=_SSE_KEEPALIVE_SECONDS)
+                    await _touch_session(session_id)
+                    yield msg
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            await _delete_session(session_id)
+
+    headers = {
+        "MCP-Session-Id": session_id,
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 
 @app.delete("/mcp")
-async def mcp_delete(origin: str | None = Header(default=None)) -> Response:
+async def mcp_delete(
+    origin: str | None = Header(default=None),
+    mcp_session_id: str | None = Header(default=None, alias="MCP-Session-Id"),
+) -> Response:
     if not _origin_allowed(origin):
         raise HTTPException(status_code=403, detail="Origin not allowed")
-    return Response(status_code=405)
+    if not mcp_session_id:
+        raise HTTPException(status_code=400, detail="Missing MCP-Session-Id")
+    await _delete_session(mcp_session_id)
+    return Response(status_code=204)
 
 
 @app.post("/mcp")
@@ -149,6 +235,7 @@ async def mcp_post(
     origin: str | None = Header(default=None),
     accept: str | None = Header(default=None),
     mcp_protocol_version: str | None = Header(default=None, alias="MCP-Protocol-Version"),
+    mcp_session_id: str | None = Header(default=None, alias="MCP-Session-Id"),
 ) -> Response:
     if not _origin_allowed(origin):
         raise HTTPException(status_code=403, detail="Origin not allowed")
@@ -179,10 +266,22 @@ async def mcp_post(
             media_type="application/json",
         )
 
+    async def _deliver(payload: dict[str, Any], status_code: int = 200) -> Response:
+        if mcp_session_id:
+            s = await _get_session(mcp_session_id)
+            if s is None:
+                err = _jsonrpc_error(payload.get("id"), -32000, "Unknown or expired MCP session")
+                return Response(status_code=400, content=json.dumps(err), media_type="application/json")
+            await _touch_session(mcp_session_id)
+            await s.queue.put(_sse_message(payload))
+            return Response(status_code=202)
+
+        return Response(status_code=status_code, content=json.dumps(payload), media_type="application/json")
+
     try:
         if method == "ping":
             payload = _jsonrpc_result(request_id, {})
-            return Response(content=json.dumps(payload), media_type="application/json")
+            return await _deliver(payload)
 
         if method == "initialize":
             requested = params.get("protocolVersion")
@@ -205,69 +304,69 @@ async def mcp_post(
                 "instructions": "Use capture_memory to store memories and search_memories to retrieve related ones.",
             }
             payload = _jsonrpc_result(request_id, result)
-            return Response(content=json.dumps(payload), media_type="application/json")
+            return await _deliver(payload)
 
         if method == "tools/list":
             payload = _jsonrpc_result(request_id, {"tools": TOOLS, "nextCursor": None})
-            return Response(content=json.dumps(payload), media_type="application/json")
+            return await _deliver(payload)
 
         if method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}
             if not isinstance(name, str) or not name:
                 payload = _jsonrpc_error(request_id, -32602, "Invalid params", "name is required")
-                return Response(content=json.dumps(payload), media_type="application/json")
+                return await _deliver(payload)
             if not isinstance(arguments, dict):
                 payload = _jsonrpc_error(request_id, -32602, "Invalid params", "arguments must be an object")
-                return Response(content=json.dumps(payload), media_type="application/json")
+                return await _deliver(payload)
 
             if name == "capture_memory":
                 content = arguments.get("content")
                 source = arguments.get("source")
                 if not isinstance(content, str) or not content.strip():
                     result = {"content": [{"type": "text", "text": "content is required"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
                 if source is not None and not isinstance(source, str):
                     result = {"content": [{"type": "text", "text": "source must be a string"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
 
                 try:
                     api_res = await _api_capture(content.strip(), source)
                 except httpx.HTTPError as e:
                     result = {"content": [{"type": "text", "text": f"API error calling /capture: {e}"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
 
                 text = f"Stored memory id={api_res.get('id')}"
                 result = {"content": [{"type": "text", "text": text}], "structuredContent": api_res, "isError": False}
-                return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                return await _deliver(_jsonrpc_result(request_id, result))
 
             if name == "search_memories":
                 query = arguments.get("query")
                 limit = arguments.get("limit", 5)
                 if not isinstance(query, str) or not query.strip():
                     result = {"content": [{"type": "text", "text": "query is required"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
                 if not isinstance(limit, int):
                     result = {"content": [{"type": "text", "text": "limit must be an integer"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
 
                 try:
                     api_res = await _api_search(query.strip(), limit)
                 except httpx.HTTPError as e:
                     result = {"content": [{"type": "text", "text": f"API error calling /search: {e}"}], "isError": True}
-                    return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                    return await _deliver(_jsonrpc_result(request_id, result))
 
                 # Provide both unstructured and structured for maximum client compatibility.
                 text = json.dumps(api_res, ensure_ascii=False)
                 result = {"content": [{"type": "text", "text": text}], "structuredContent": api_res, "isError": False}
-                return Response(content=json.dumps(_jsonrpc_result(request_id, result)), media_type="application/json")
+                return await _deliver(_jsonrpc_result(request_id, result))
 
             payload = _jsonrpc_error(request_id, -32602, "Unknown tool", {"name": name})
-            return Response(content=json.dumps(payload), media_type="application/json")
+            return await _deliver(payload)
 
         payload = _jsonrpc_error(request_id, -32601, "Method not found", {"method": method})
-        return Response(content=json.dumps(payload), media_type="application/json")
+        return await _deliver(payload)
 
     except Exception as e:
         payload = _jsonrpc_error(request_id, -32603, "Internal error", str(e))
-        return Response(content=json.dumps(payload), media_type="application/json")
+        return await _deliver(payload)
