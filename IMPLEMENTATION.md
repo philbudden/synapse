@@ -8,10 +8,12 @@ Synapse provides:
 
 - Persistent storage of captured “memories” (plain text)
 - Embedding generation via **Ollama**
+- Automatic **classification** of captures (using embedding similarity to category prototypes)
 - Vector similarity search via **PostgreSQL + pgvector**
 - An **MCP (Model Context Protocol)** server that exposes two tools:
   - `capture_memory`
   - `search_memories`
+- Optional **Matrix** ingestion via a lightweight bot service
 
 Everything runs in containers **except Ollama**, which is assumed to already be running (local-first).
 
@@ -32,6 +34,8 @@ Memory API (FastAPI)
   │
   ▼
 Postgres (pgvector)
+
+Matrix User → Matrix Bot (optional) ──calls──► Memory API
 ```
 
 ### Components
@@ -72,6 +76,7 @@ Postgres (pgvector)
 │       ├── config.py
 │       ├── db.py
 │       ├── embeddings.py
+│       ├── classify.py
 │       ├── models.py
 │       └── search.py
 ├── mcp/
@@ -79,6 +84,10 @@ Postgres (pgvector)
 │   ├── requirements.txt
 │   ├── server.py
 │   └── stdio_server.py
+├── matrix/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── bot.py
 └── docs/
     └── architecture.md
 ```
@@ -103,6 +112,15 @@ Copy `.env.example` to `.env` and adjust as needed.
 - `OLLAMA_PORT` (default `11434`)
 - `EMBED_MODEL` (default `nomic-embed-text`)
 
+### Matrix (optional)
+
+Enable the `matrix-bot` service with the compose profile `matrix` and configure:
+
+- `MATRIX_HOMESERVER`
+- `MATRIX_USER_ID`
+- `MATRIX_ACCESS_TOKEN`
+- `MATRIX_ROOM_ID`
+
 **Important:** the embedding model must exist in Ollama (e.g. `ollama pull nomic-embed-text`).
 
 ### API
@@ -122,6 +140,11 @@ Copy `.env.example` to `.env` and adjust as needed.
 ## Database schema
 
 Initialized by `db/init.sql`.
+
+### Classification
+
+Captures can store classification metadata in `captures.classification` (JSONB), along with `classification_model` and `classified_at`.
+The API classifies content using embedding similarity to a small set of category prototypes (no extra LLM required beyond embeddings).
 
 ### Extensions
 
@@ -181,15 +204,21 @@ Request body:
 
 Processing:
 1. Generate embedding via Ollama `POST /api/embeddings`
-2. Insert into `captures`
-3. Insert into `memories` with the embedding
+2. Classify the capture using embedding similarity to category prototypes
+3. Insert into `captures` (including classification metadata)
+4. Insert into `memories` with the embedding
 
 Response:
 
 ```json
 {
   "status": "stored",
-  "id": "<memory uuid>"
+  "id": "<memory uuid>",
+  "classification": {
+    "category": "idea",
+    "confidence": 0.83,
+    "method": "embedding-prototypes"
+  }
 }
 ```
 
@@ -223,7 +252,15 @@ Response:
 ```json
 {
   "results": [
-    {"content": "...", "score": 0.82}
+    {
+      "content": "...",
+      "score": 0.82,
+      "classification": {
+        "category": "work",
+        "confidence": 0.71,
+        "method": "embedding-prototypes"
+      }
+    }
   ]
 }
 ```

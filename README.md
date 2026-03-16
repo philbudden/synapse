@@ -35,6 +35,26 @@ curl -sS -X POST http://localhost:8000/capture \
 curl -sS 'http://localhost:8000/search?query=example&limit=5' | cat
 ```
 
+Notes:
+- `/capture` also returns a `classification` object (category + confidence).
+- `/search` results may include `classification` metadata when available.
+
+## Matrix ingestion (optional)
+
+Enable the Matrix bot service (requires access token + room ID):
+
+```bash
+docker compose --profile matrix up -d --build
+```
+
+Set these in `.env`:
+- `MATRIX_HOMESERVER`
+- `MATRIX_USER_ID`
+- `MATRIX_ACCESS_TOKEN`
+- `MATRIX_ROOM_ID`
+
+Then post a message in the configured room — the bot will store it and reply with the stored ID + category.
+
 ## MCP tools
 
 This server implements MCP **Streamable HTTP** at:

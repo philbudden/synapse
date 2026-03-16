@@ -28,6 +28,10 @@ AI Client → MCP Server → Memory API → (Ollama embeddings) → Postgres (pg
   - Streamable HTTP: `POST /mcp`
   - Tools: `capture_memory`, `search_memories`
 
+- **matrix-bot** (optional profile: `matrix`)
+  - Listens for messages in a configured Matrix room
+  - Calls `POST /capture` on the API and replies with the stored ID + category
+
 ## External dependency
 
 - **Ollama** is an external dependency (not containerized). The API calls:
