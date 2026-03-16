@@ -1,162 +1,221 @@
-# :brain: Synapse
+# Synapse
 
-Persistent AI memory: capture thoughts, generate embeddings with Ollama, store in Postgres (pgvector), and retrieve via semantic search. Includes an MCP (Model Context Protocol) server exposing `capture_memory` and `search_memories` tools.
+Synapse is a **personal memory inbox** you can talk to.
 
-```text
-AI Client → MCP Server → Memory API → (Ollama embeddings) → Postgres (pgvector)
-```
+- You write a thought.
+- Synapse stores it in a database.
+- Later you can search it by meaning (semantic search).
+
+This repo runs everything in Docker **except Ollama** (embeddings), which you run separately.
+
+## What you’ll run
+
+- **Ollama** (on your machine or a remote host) — creates embeddings
+- **Synapse API** (Docker) — stores and searches memories
+- **Postgres** (Docker) — database
+- **Synapse MCP server** (Docker) — lets LLM clients use Synapse as tools
+- **Matrix homeserver (Synapse)** (Docker, optional) — so you can capture memories from Element X
+- **Matrix capture bot** (Docker, optional) — turns Matrix room messages into stored memories
+
+---
 
 ## Prerequisites
 
-- Docker + Docker Compose
-- Ollama reachable from the API container (default: `http://localhost:11434` via `host.docker.internal`)
-  - Ensure an embedding model is available, e.g. `ollama pull nomic-embed-text`
-  - To use a remote Ollama instance, set `OLLAMA_HOST` (e.g. `100.104.36.96`) and `OLLAMA_PORT` in `.env`
+1. Install **Docker Desktop** (or Docker Engine + Compose).
+2. Install **Ollama**.
+3. Ensure the embedding model exists:
 
-## Quick start
+```bash
+ollama pull nomic-embed-text
+```
+
+If you want to use a **remote Ollama** (example: `100.104.36.96`): set `OLLAMA_HOST` in `.env` (steps below).
+
+---
+
+## 1) Start Synapse (API + DB + MCP)
+
+### Step 1 — Create your config
 
 ```bash
 cp .env.example .env
+```
+
+Edit `.env` if needed:
+
+- Local Ollama (default on macOS/Windows Docker Desktop):
+  - `OLLAMA_HOST=host.docker.internal`
+  - `OLLAMA_PORT=11434`
+- Remote Ollama example:
+  - `OLLAMA_HOST=100.104.36.96`
+  - `OLLAMA_PORT=11434`
+
+### Step 2 — Start the stack
+
+```bash
 docker compose up -d --build
 ```
 
-API will be on `http://localhost:8000` and MCP on `http://localhost:8080/mcp`.
+### Step 3 — Verify it’s running
 
-## Test memory capture
+```bash
+curl -fsS http://localhost:8000/health | cat
+curl -fsS http://localhost:8080/health | cat
+```
+
+You should have:
+
+- API: `http://localhost:8000`
+- MCP: `http://localhost:8080/mcp`
+
+### Step 4 — Quick API test (optional)
+
+Capture a memory:
 
 ```bash
 curl -sS -X POST http://localhost:8000/capture \
   -H 'Content-Type: application/json' \
-  -d '{"content":"example memory","source":"manual"}' | cat
+  -d '{"content":"buy better coffee beans"}' | cat
 ```
 
-## Test semantic search
+Search:
 
 ```bash
-curl -sS 'http://localhost:8000/search?query=example&limit=5' | cat
+curl -sS 'http://localhost:8000/search?query=coffee&limit=5' | cat
 ```
 
-Notes:
-- `/capture` also returns a `classification` object (category + confidence).
-- `/search` results may include `classification` metadata when available.
+---
 
-## Matrix (optional, in-stack homeserver)
+## 2) Capture memories using Matrix (Element X)
 
-This repo can run a full **Matrix Synapse** homeserver in the stack (plus a small TLS proxy so **Element X** can connect over HTTPS) and an optional Matrix bot that captures room messages into Synapse.
+This repo can run a full Matrix homeserver (Synapse) in Docker.
 
-Start Matrix services:
+### Important note about Element X “Sign up”
+
+Many Element X builds **won’t create accounts** on classic-password homeservers unless you add Matrix Authentication Service (MAS).
+
+This setup is still usable:
+
+- Create users **on the server** (one-time command)
+- Then use **Sign in** in Element X
+
+### Step 1 — Start Matrix services
 
 ```bash
 docker compose --profile matrix up -d --build
 ```
 
-Configure these in `.env`:
-- `MATRIX_SERVER_NAME` (domain used in Matrix IDs, e.g. `localhost`)
-- `MATRIX_PUBLIC_BASE_URL` (recommended): the exact homeserver URL you will type into your client.
-  - For the confirmed working local-only setup: `http://mac-workstation:8008`
+Matrix will be available locally at:
 
-(Optional, only if using the TLS proxy)
-- `MATRIX_TLS_PORT` (default `8448`)
+- `http://localhost:8008`
 
-Notes:
-- On first start, Synapse generates `homeserver.yaml` into its persistent `/data` volume. If you change `MATRIX_SERVER_NAME` later, wipe the Matrix volume (`docker compose down -v`) to regenerate.
-- Registration is enabled by default for **LAN/VPN-only** convenience.
+### Step 2 — Create your Matrix user
 
-Verify Matrix is up (HTTP):
+Replace `alice` / password as you like:
 
 ```bash
-curl -fsS "http://${MATRIX_PUBLIC_HOST:-localhost}:8008/_matrix/client/versions" | cat
-```
-
-### Connect from Element X (LAN/VPN)
-
-Option A (simplest, local-only HTTP):
-- Homeserver URL: `http://<host>:8008`
-- Example: `http://mac-workstation:8008`
-
-Account creation note (Element X):
-- Recent Element X builds may not support **in-app sign up** on classic-password homeservers without a Matrix Authentication Service (MAS).
-- Workaround: create the user on the server (command below), then use **Sign in** in Element X.
-
-Option B (HTTPS via TLS proxy, optional):
-- Preferred: `https://<host>` (port **443**)
-- Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
-
-Note: iOS clients typically require a *trusted* certificate chain. If you don’t want to manage TLS trust for a LAN-only server, stick with Option A (HTTP).
-
-Create a local user (run on the host):
-
-```bash
-# creates @alice:<MATRIX_SERVER_NAME> with password
 docker compose --profile matrix exec -T matrix-synapse \
   register_new_matrix_user -c /data/homeserver.yaml \
   -u alice -p 'change-me' http://localhost:8008
 ```
 
-Then in Element X choose **Sign in**, and enter:
-- Username: `@alice:${MATRIX_SERVER_NAME}` (default `@alice:localhost`)
-- Password: the one you set
+### Step 3 — Connect from Element X (recommended: HTTP for LAN/VPN)
 
-If you *do* want HTTPS later, you’ll need either:
-- a publicly-trusted cert for a real DNS name, or
-- to install/trust the proxy’s internal CA root cert on iOS.
+On your phone (same home network / VPN / Tailscale):
 
-Internal CA path (copy root cert from proxy container):
+1. Open Element X
+2. Choose **Sign in** (not Sign up)
+3. Homeserver:
+   - `http://<your-mac-or-server-hostname>:8008`
+   - Example: `http://mac-workstation:8008`
+4. Username:
+   - `@alice:<MATRIX_SERVER_NAME>` (default `@alice:localhost`)
+5. Password:
+   - the one you set
 
-1. Find the proxy container name:
+### Step 4 — Turn Matrix messages into stored memories (Matrix bot)
 
-   ```bash
-   docker compose --profile matrix ps
-   ```
+The `matrix-bot` service watches **one room** and stores every message as a memory.
 
-2. Copy the CA cert out (path inside container: `/data/pki/authorities/local/root.crt`):
+#### 4a) Create a bot user
 
-   ```bash
-   docker cp <matrix-proxy-container>:/data/pki/authorities/local/root.crt ./matrix-root.crt
-   ```
+```bash
+docker compose --profile matrix exec -T matrix-synapse \
+  register_new_matrix_user -c /data/homeserver.yaml \
+  -u synapsebot -p 'bot-password' http://localhost:8008
+```
 
-3. Install `matrix-root.crt` on your phone and mark it as trusted (platform-specific).
+#### 4b) Get the bot access token
 
-Security note: this Matrix setup is intended for **home network / VPN only**. Don’t expose it to the public internet as-is.
+Run on your host:
 
-### Matrix capture bot (optional)
+```bash
+curl -sS -X POST http://localhost:8008/_matrix/client/v3/login \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"m.login.password","user":"synapsebot","password":"bot-password"}' | cat
+```
 
-If you want room messages automatically stored in Synapse, set in `.env`:
-- `MATRIX_HOMESERVER` (default `http://matrix-synapse:8008`)
-- `MATRIX_USER_ID`
-- `MATRIX_ACCESS_TOKEN`
-- `MATRIX_ROOM_ID`
+If login fails, try the full Matrix ID as the user:
 
-Then post a message in the configured room — the bot will store it and reply with the stored ID + category.
+```bash
+curl -sS -X POST http://localhost:8008/_matrix/client/v3/login \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"m.login.password","user":"@synapsebot:localhost","password":"bot-password"}' | cat
+```
 
-## MCP tools
+Copy the `access_token` from the response.
 
-This server implements MCP **Streamable HTTP** at:
+#### 4c) Create (or pick) a room in Element X
 
-- `POST http://localhost:8080/mcp`
+1. Create a room (e.g. “Synapse Inbox”)
+2. Invite `@synapsebot:<MATRIX_SERVER_NAME>`
+3. Find the **Room ID** in the room settings/info (it looks like `!abcdef:localhost`)
 
-Supported MCP methods:
-- `initialize`
-- `ping`
-- `tools/list`
-- `tools/call`
+#### 4d) Configure the bot in `.env`
 
-Tools:
-- `capture_memory` `{ content: string, source?: string }`
-- `search_memories` `{ query: string, limit?: number }`
+Set these:
 
-### MCP client integration
+```text
+MATRIX_HOMESERVER=http://matrix-synapse:8008
+MATRIX_USER_ID=@synapsebot:localhost
+MATRIX_ACCESS_TOKEN=PASTE_TOKEN_HERE
+MATRIX_ROOM_ID=!yourRoomId:localhost
+```
 
-#### ChatGPT connectors / HTTP MCP clients
+Then restart just the bot:
 
-If your client supports MCP **Streamable HTTP**, configure the MCP endpoint URL as:
+```bash
+docker compose --profile matrix up -d matrix-bot
+```
+
+If the bot still says it’s idling, re-check that the values were saved to `.env` and that you restarted the bot after editing `.env`.
+
+#### 4e) Test
+
+Post a message in the room. The bot should reply with the stored memory ID (and category).
+
+---
+
+## 3) Connect Synapse MCP to other LLM services
+
+Synapse exposes MCP **Streamable HTTP** at:
 
 - `http://localhost:8080/mcp`
 
-#### Claude Desktop (stdio)
+The MCP server provides two tools:
 
-Claude Desktop typically runs MCP servers over **stdio** (a local command).
-This repo includes a stdio entrypoint inside the MCP Docker image.
+- `capture_memory` — store a memory
+- `search_memories` — semantic search
+
+### Option A — Use an HTTP MCP client
+
+If your client supports **HTTP MCP**, point it at:
+
+- `http://localhost:8080/mcp`
+
+### Option B — Claude Desktop (stdio)
+
+Claude Desktop uses MCP over a local command. This repo ships a stdio entrypoint inside the MCP Docker image.
 
 Example `claude_desktop_config.json` snippet:
 
@@ -181,26 +240,40 @@ Example `claude_desktop_config.json` snippet:
 ```
 
 Notes:
-- Ensure the Synapse stack is running (`docker compose up -d --build`).
-- On Linux, replace `host.docker.internal` with your host IP or another reachable hostname.
+- Ensure the stack is running (`docker compose up -d --build`).
+- On Linux, replace `host.docker.internal` with your host IP/hostname.
+
+---
 
 ## Troubleshooting
 
-### Ollama unreachable from Docker
+### API says Ollama is unavailable
 
-By default we use `OLLAMA_HOST=host.docker.internal` (works on Docker Desktop). On Linux, set `OLLAMA_HOST` to your host IP (or run Ollama in Docker).
+- Confirm Ollama is running.
+- Confirm the API container can reach it:
+  - macOS/Windows: `OLLAMA_HOST=host.docker.internal`
+  - remote: set `OLLAMA_HOST=<ip/hostname>`
 
-### Embedding dimension mismatch
+### Element X can’t connect
 
-The database schema uses `VECTOR(768)`. If your embedding model returns a different dimension, `/capture` and `/search` will return a 500 with a clear error. Use a 768-dim model (default `nomic-embed-text`) or adjust the schema + code together.
+- Prefer HTTP for local-only: `http://<host>:8008`
+- Make sure you used **Sign in**, and created the user with `register_new_matrix_user`.
 
-### Postgres/pgvector init
+### Matrix bot is “idling”
 
-If you changed the schema and need to re-run init, remove the volume:
+This means it isn’t configured yet. Set:
+
+- `MATRIX_USER_ID`
+- `MATRIX_ACCESS_TOKEN`
+- `MATRIX_ROOM_ID`
+
+Then restart the bot:
 
 ```bash
-docker compose down -v
+docker compose --profile matrix up -d matrix-bot
 ```
+
+---
 
 ## License
 
