@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-synapse}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  mcp:
+    build: ./mcp
+    env_file:
+      - .env
+    depends_on:
+      - api
+    ports:
+      - "${MCP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
