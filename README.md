@@ -172,6 +172,8 @@ Copy the `access_token` from the response.
 
 Why: Element X often creates encrypted rooms by default. This minimal `matrix-bot` does **not** support decrypting E2EE messages, so it won’t see your text (and nothing will be stored).
 
+Note: if you already created an encrypted room, you generally **can’t disable encryption later** — create a new unencrypted room for your Synapse inbox.
+
 Element X doesn’t always show the raw **Room ID** in the UI. You can fetch it from the homeserver.
 
 First, log in to the homeserver as your normal user (replace username/password):
