@@ -165,15 +165,14 @@ curl -sS -X POST http://localhost:8008/_matrix/client/v3/login \
 
 Copy the `access_token` from the response.
 
-#### 4c) Create (or pick) a room in Element X
+#### 4c) Create a room (your “inbox”)
 
 1. Create a room (e.g. “Synapse Inbox”)
-2. Invite `@synapsebot:<MATRIX_SERVER_NAME>`
-3. Find the **Room ID** in the room settings/info (it looks like `!abcdef:localhost`)
+2. In the room settings/info, copy the **Room ID** (it looks like `!abcdef:localhost`)
 
-#### 4d) Configure the bot in `.env`
+#### 4d) Configure + start the bot
 
-Set these:
+Set these in `.env` (replace the room ID and token):
 
 ```text
 MATRIX_HOMESERVER=http://matrix-synapse:8008
@@ -182,15 +181,26 @@ MATRIX_ACCESS_TOKEN=PASTE_TOKEN_HERE
 MATRIX_ROOM_ID=!yourRoomId:localhost
 ```
 
-Then restart just the bot:
+Restart the bot:
 
 ```bash
-docker compose --profile matrix up -d matrix-bot
+docker compose --profile matrix up -d --build matrix-bot
 ```
 
-If the bot still says it’s idling, re-check that the values were saved to `.env` and that you restarted the bot after editing `.env`.
+Note: the bot can only accept invites when it’s running and has `MATRIX_USER_ID` + `MATRIX_ACCESS_TOKEN` configured.
 
-#### 4e) Test
+#### 4e) Invite the bot to the room
+
+In Element X, invite `@synapsebot:<MATRIX_SERVER_NAME>` to the room.
+
+- If you already invited it earlier: after the bot is configured and restarted, it should accept automatically within ~30 seconds.
+- If it stays stuck under “Invited”, check the bot logs:
+
+```bash
+docker compose --profile matrix logs --tail=200 matrix-bot
+```
+
+#### 4f) Test
 
 Post a message in the room. The bot should reply with the stored memory ID (and category).
 
