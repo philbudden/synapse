@@ -32,5 +32,16 @@ services:
       - "${MCP_PORT:-8080}:8080"
     restart: unless-stopped
 
+  matrix-bot:
+    build: ./matrix
+    profiles: ["matrix"]
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres_data:
