@@ -61,9 +61,15 @@ services:
       MATRIX_PUBLIC_BASE_URL: ${MATRIX_PUBLIC_BASE_URL:-}
       # Optional: federation discovery value for /.well-known/matrix/server
       MATRIX_PUBLIC_SERVER_NAME: ${MATRIX_PUBLIC_SERVER_NAME:-}
+
+      # Optional: use a publicly-trusted certificate (e.g. from `tailscale cert`).
+      # If set, the proxy will use these files instead of the internal CA.
+      MATRIX_TLS_CERT_FILE: ${MATRIX_TLS_CERT_FILE:-}
+      MATRIX_TLS_KEY_FILE: ${MATRIX_TLS_KEY_FILE:-}
     volumes:
       - ./matrix-proxy/entrypoint.sh:/entrypoint.sh:ro
       - matrix_caddy_data:/data
+      - ./.local/matrix-tls:/tls:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     ports:
       - "${MATRIX_TLS_PORT:-8448}:${MATRIX_TLS_PORT:-8448}"

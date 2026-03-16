@@ -80,7 +80,33 @@ Examples:
 - `https://mac-workstation.tailXXXX.ts.net` (Tailscale MagicDNS FQDN)
 - `https://mac-workstation:8448` (alternate if you prefer the Matrix port)
 
-This uses a local TLS certificate from Caddy’s **internal CA**. To avoid certificate warnings, install and trust the CA root certificate on your phone:
+By default this uses a local TLS certificate from Caddy’s **internal CA**.
+
+If iOS continues to show **“This Connection Is Not Private”**, the simplest fix is to use a **publicly-trusted** certificate via Tailscale:
+
+1. On the host, generate a cert for your MagicDNS name:
+
+   ```bash
+   tailscale cert mac-workstation.tailXXXX.ts.net
+   ```
+
+2. Copy the generated `.crt` and `.key` into `./.local/matrix-tls/`.
+
+3. Set in `.env`:
+
+   ```bash
+   MATRIX_PUBLIC_BASE_URL=https://mac-workstation.tailXXXX.ts.net
+   MATRIX_TLS_CERT_FILE=/tls/mac-workstation.tailXXXX.ts.net.crt
+   MATRIX_TLS_KEY_FILE=/tls/mac-workstation.tailXXXX.ts.net.key
+   ```
+
+4. Restart:
+
+   ```bash
+   docker compose --profile matrix up -d
+   ```
+
+Otherwise (internal CA path), install and trust the CA root certificate on your phone:
 
 1. Find the proxy container name:
 

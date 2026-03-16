@@ -145,6 +145,13 @@ TLS proxy discovery config:
   - Recommended: set this to the exact homeserver URL you’ll enter in Element X, e.g. `https://mac-workstation`.
 - `MATRIX_PUBLIC_SERVER_NAME` (optional): what `/.well-known/matrix/server` returns for `m.server` (federation discovery).
 
+TLS proxy certificate options:
+- Default: Caddy internal CA + on-demand leaf certs (requires installing/trusting the CA root on iOS).
+- Optional: use a publicly trusted cert (recommended on Tailscale) by setting:
+  - `MATRIX_TLS_CERT_FILE` (e.g. `/tls/<name>.crt`)
+  - `MATRIX_TLS_KEY_FILE` (e.g. `/tls/<name>.key`)
+  and placing the files in `./.local/matrix-tls/` (bind-mounted into the proxy as `/tls`).
+
 Element X connection URL:
 - Preferred: `https://<host>` (port 443)
 - Alternate: `https://<host>:<MATRIX_TLS_PORT>`

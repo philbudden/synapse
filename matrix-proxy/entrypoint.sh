@@ -13,6 +13,20 @@ BASE_URL="${MATRIX_PUBLIC_BASE_URL:-https://{host}}"
 # Used for federation discovery (optional). Defaults to the inbound Host header.
 SERVER_NAME="${MATRIX_PUBLIC_SERVER_NAME:-{host}}"
 
+TLS_CERT_FILE="${MATRIX_TLS_CERT_FILE:-}"
+TLS_KEY_FILE="${MATRIX_TLS_KEY_FILE:-}"
+
+if [ -n "$TLS_CERT_FILE" ] && [ -n "$TLS_KEY_FILE" ]; then
+  TLS_BLOCK="  tls $TLS_CERT_FILE $TLS_KEY_FILE"
+else
+  TLS_BLOCK=$(cat <<'EOT'
+  tls internal {
+    on_demand
+  }
+EOT
+)
+fi
+
 cat > /etc/caddy/Caddyfile <<EOF
 {
   storage file_system {
@@ -29,9 +43,7 @@ cat > /etc/caddy/Caddyfile <<EOF
 }
 
 :${TLS_PORT} {
-  tls internal {
-    on_demand
-  }
+$TLS_BLOCK
 
   # Matrix client discovery.
   handle /.well-known/matrix/client {
