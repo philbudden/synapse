@@ -71,7 +71,7 @@ def capture(req: CaptureRequest) -> CaptureResponse:
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
-    return CaptureResponse(status="stored", id=str(memory_id))
+    return CaptureResponse(status="stored", id=str(memory_id), classification=classification)
 
 
 @app.get("/search", response_model=SearchResponse)

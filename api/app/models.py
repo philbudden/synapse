@@ -13,6 +13,7 @@ class CaptureRequest(BaseModel):
 class CaptureResponse(BaseModel):
     status: Literal["stored"]
     id: str
+    classification: dict[str, Any] | None = None
 
 
 class SearchResult(BaseModel):
