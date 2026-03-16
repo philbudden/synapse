@@ -53,11 +53,18 @@ services:
     image: caddy:2.8
     profiles: ["matrix"]
     environment:
-      MATRIX_PUBLIC_HOST: ${MATRIX_PUBLIC_HOST:-localhost}
       MATRIX_TLS_PORT: ${MATRIX_TLS_PORT:-8448}
+      # Optional: set this to a stable hostname that matches your TLS certificate.
+      # Recommended values:
+      # - https://mac-workstation (if you publish 443)
+      # - https://mac-workstation.<tailnet>.ts.net (on Tailscale)
+      MATRIX_PUBLIC_BASE_URL: ${MATRIX_PUBLIC_BASE_URL:-}
+      # Optional: federation discovery value for /.well-known/matrix/server
+      MATRIX_PUBLIC_SERVER_NAME: ${MATRIX_PUBLIC_SERVER_NAME:-}
     volumes:
-      - ./matrix-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./matrix-proxy/entrypoint.sh:/entrypoint.sh:ro
       - matrix_caddy_data:/data
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     ports:
       - "${MATRIX_TLS_PORT:-8448}:${MATRIX_TLS_PORT:-8448}"
       # Element X and Matrix discovery often expect HTTPS on 443.

@@ -53,9 +53,9 @@ docker compose --profile matrix up -d --build
 Configure these in `.env`:
 - `MATRIX_SERVER_NAME` (domain used in Matrix IDs, e.g. `localhost`)
 - `MATRIX_TLS_PORT` (default `8448`)
+- `MATRIX_PUBLIC_BASE_URL` (recommended): the exact homeserver URL you will type into Element X, e.g. `https://mac-workstation` or `https://mac-workstation.<tailnet>.ts.net`
 
-You can connect from Element X using **either** your LAN IP or Tailnet IP:
-- `https://<lan-ip>:8448` or `https://<tailnet-ip>:8448`
+For best results on iOS, prefer a **hostname** (MagicDNS / .ts.net) on port **443**.
 
 Notes:
 - On first start, Synapse generates `homeserver.yaml` into its persistent `/data` volume. If you change `MATRIX_SERVER_NAME` later, wipe the Matrix volume (`docker compose down -v`) to regenerate.
@@ -64,7 +64,8 @@ Notes:
 Verify Matrix is up (TLS proxy):
 
 ```bash
-curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}:${MATRIX_TLS_PORT:-8448}/_matrix/client/versions" | cat
+# Port 443 is published to the proxy by default.
+curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}/_matrix/client/versions" | cat
 ```
 
 ### Connect from Element X (LAN/VPN)
@@ -75,8 +76,9 @@ Use this homeserver URL:
 - Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
 
 Examples:
-- `https://mac-workstation` (Tailnet/LAN name)
-- `https://mac-workstation:8448`
+- `https://mac-workstation` (LAN / MagicDNS short name)
+- `https://mac-workstation.tailXXXX.ts.net` (Tailscale MagicDNS FQDN)
+- `https://mac-workstation:8448` (alternate if you prefer the Matrix port)
 
 This uses a local TLS certificate from Caddy’s **internal CA**. To avoid certificate warnings, install and trust the CA root certificate on your phone:
 

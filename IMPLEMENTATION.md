@@ -100,7 +100,7 @@ Matrix Bot (optional) ──calls──► Memory API
 │   ├── Dockerfile
 │   └── entrypoint.sh
 ├── matrix-proxy/
-│   └── Caddyfile
+│   └── entrypoint.sh
 └── docs/
     └── architecture.md
 ```
@@ -140,8 +140,14 @@ Homeserver config:
 - `MATRIX_TLS_PORT` (default `8448`)
 - `MATRIX_REPORT_STATS` (default `no`)
 
+TLS proxy discovery config:
+- `MATRIX_PUBLIC_BASE_URL` (optional): what `/.well-known/matrix/client` returns for `m.homeserver.base_url`.
+  - Recommended: set this to the exact homeserver URL you’ll enter in Element X, e.g. `https://mac-workstation`.
+- `MATRIX_PUBLIC_SERVER_NAME` (optional): what `/.well-known/matrix/server` returns for `m.server` (federation discovery).
+
 Element X connection URL:
-- `https://<MATRIX_PUBLIC_HOST>:<MATRIX_TLS_PORT>`
+- Preferred: `https://<host>` (port 443)
+- Alternate: `https://<host>:<MATRIX_TLS_PORT>`
 
 Caddy internal CA root cert path (inside the proxy container):
 - `/data/pki/authorities/local/root.crt`
