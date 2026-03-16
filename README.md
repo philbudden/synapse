@@ -270,12 +270,15 @@ If your client supports **HTTP MCP**, point it at:
 
 #### OpenWebUI notes
 
+Quick clarification: `GET /mcp/openapi.json` will **not** list MCP tools. MCP tools are discovered via JSON-RPC `tools/list`.
+
 If you’re using OpenWebUI and it looks like the Synapse tool is never called:
 
 1. Make sure OpenWebUI can reach the URL (from another machine, use `http://<your-host-ip>:8080/mcp`).
 2. In the chat, ensure the Synapse tool is enabled/active for the conversation.
 3. Use a model/config that supports tool calling.
-4. Verify the MCP server is being invoked by watching logs:
+4. If OpenWebUI is running in a browser, it will send an `Origin` header. If MCP replies **403 Origin not allowed**, add your OpenWebUI URL (exactly as shown in the browser address bar, including `http://`/`https://` and port) to `MCP_ALLOWED_ORIGINS` in `.env`, then restart the MCP service.
+5. Verify the MCP server is being invoked by watching logs:
 
 ```bash
 docker compose logs -f --tail=200 mcp
