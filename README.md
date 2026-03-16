@@ -246,7 +246,16 @@ Post a message in the room. The bot should reply with the stored memory ID (and 
 
 Synapse exposes MCP **Streamable HTTP** at:
 
-- `http://localhost:8080/mcp`
+- On the same machine: `http://localhost:8080/mcp`
+- From another device on your home network / VPN / Tailscale: `http://<your-host-ip>:8080/mcp`
+
+Example (LAN): `http://192.168.1.50:8080/mcp`
+Example (Tailscale): `http://100.x.y.z:8080/mcp`
+
+Notes:
+- The container publishes port **8080** on your host. If another device can’t reach it, check your firewall/router rules.
+- This project has **no authentication** by default. Only expose MCP to trusted networks (LAN/VPN), not the public internet.
+- If you’re calling MCP from a browser-based app, you may need to set `MCP_ALLOWED_ORIGINS` in `.env`.
 
 The MCP server provides two tools:
 
