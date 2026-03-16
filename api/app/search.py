@@ -7,15 +7,23 @@ from pgvector.psycopg import Vector
 
 def _run_search(conn: Any, qv: Vector, limit: int) -> list[dict[str, object]]:
     sql = """
-        SELECT content,
-               1 - (embedding <=> %s) AS score
-        FROM memories
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> %s
+        SELECT m.content,
+               1 - (m.embedding <=> %s) AS score,
+               c.classification
+        FROM memories m
+        LEFT JOIN captures c ON c.id = m.capture_id
+        WHERE m.embedding IS NOT NULL
+        ORDER BY m.embedding <=> %s
         LIMIT %s
     """
     rows = conn.execute(sql, (qv, qv, limit)).fetchall()
-    return [{"content": r[0], "score": float(r[1])} for r in rows]
+    out: list[dict[str, object]] = []
+    for content, score, classification in rows:
+        item: dict[str, object] = {"content": content, "score": float(score)}
+        if classification is not None:
+            item["classification"] = classification
+        out.append(item)
+    return out
 
 
 def search_memories(conn: Any, query_embedding: list[float], limit: int) -> list[dict[str, object]]:

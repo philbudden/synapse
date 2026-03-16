@@ -18,6 +18,7 @@ class CaptureResponse(BaseModel):
 class SearchResult(BaseModel):
     content: str
     score: float
+    classification: dict[str, Any] | None = None
 
 
 class SearchResponse(BaseModel):

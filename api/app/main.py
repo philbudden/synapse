@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 from pgvector.psycopg import Vector
+from psycopg.types.json import Json
 
+from .classify import classify_embedding
+from .config import settings
 from .db import close_pool, get_conn, init_pool
 from .embeddings import EmbeddingError, embed_text
 from .models import CaptureRequest, CaptureResponse, SearchResponse
@@ -39,12 +42,22 @@ def capture(req: CaptureRequest) -> CaptureResponse:
             detail=f"Embedding dimension {len(embedding)} does not match schema VECTOR(768).",
         )
 
+    # Classification should not block storing; if it fails we store an explicit fallback.
+    try:
+        classification = classify_embedding(embedding).as_dict()
+    except Exception as e:
+        classification = {"category": "unclassified", "confidence": 0.0, "error": str(e)}
+
     try:
         with get_conn() as conn:
             with conn.transaction():
                 capture_id = conn.execute(
-                    "INSERT INTO captures (source, content) VALUES (%s, %s) RETURNING id",
-                    (req.source, req.content),
+                    """
+                    INSERT INTO captures (source, content, classification, classification_model, classified_at)
+                    VALUES (%s, %s, %s, %s, now())
+                    RETURNING id
+                    """,
+                    (req.source, req.content, Json(classification), settings.embed_model),
                 ).fetchone()[0]
 
                 memory_id = conn.execute(
