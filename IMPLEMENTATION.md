@@ -13,7 +13,7 @@ Synapse provides:
 - An **MCP (Model Context Protocol)** server that exposes two tools:
   - `capture_memory`
   - `search_memories`
-- Optional **Matrix** ingestion via a lightweight bot service
+- Optional **Matrix**: in-stack Synapse homeserver + local TLS proxy (Element X friendly) + ingestion bot
 
 Everything runs in containers **except Ollama**, which is assumed to already be running (local-first).
 
@@ -35,7 +35,15 @@ Memory API (FastAPI)
   ▼
 Postgres (pgvector)
 
-Matrix User → Matrix Bot (optional) ──calls──► Memory API
+Matrix User (Element X)
+  │  HTTPS (LAN/VPN)
+  ▼
+Matrix TLS Proxy (Caddy, internal CA)
+  │
+  ▼
+Matrix Synapse Homeserver
+
+Matrix Bot (optional) ──calls──► Memory API
 ```
 
 ### Components
@@ -88,6 +96,11 @@ Matrix User → Matrix Bot (optional) ──calls──► Memory API
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── bot.py
+├── matrix-homeserver/
+│   ├── Dockerfile
+│   └── entrypoint.sh
+├── matrix-proxy/
+│   └── Caddyfile
 └── docs/
     └── architecture.md
 ```
@@ -112,11 +125,30 @@ Copy `.env.example` to `.env` and adjust as needed.
 - `OLLAMA_PORT` (default `11434`)
 - `EMBED_MODEL` (default `nomic-embed-text`)
 
+Remote Ollama is supported by setting `OLLAMA_HOST` to a reachable IP/hostname (for example `100.104.36.96` on your home network/VPN).
+
 ### Matrix (optional)
 
-Enable the `matrix-bot` service with the compose profile `matrix` and configure:
+The compose profile `matrix` adds three services:
+- `matrix-synapse`: Matrix homeserver (Synapse)
+- `matrix-proxy`: Caddy reverse proxy with local TLS (internal CA) for Element X
+- `matrix-bot` (optional): captures room messages into Synapse
 
-- `MATRIX_HOMESERVER`
+Homeserver config:
+- `MATRIX_SERVER_NAME` (default `localhost`)
+- `MATRIX_PUBLIC_HOST` (what clients connect to on LAN/VPN/Tailscale)
+- `MATRIX_HTTP_PORT` (default `8008`)
+- `MATRIX_TLS_PORT` (default `8448`)
+- `MATRIX_REPORT_STATS` (default `no`)
+
+Element X connection URL:
+- `https://<MATRIX_PUBLIC_HOST>:<MATRIX_TLS_PORT>`
+
+Caddy internal CA root cert path (inside the proxy container):
+- `/data/pki/authorities/local/root.crt`
+
+Bot config (only required if you want ingestion):
+- `MATRIX_HOMESERVER` (default `http://matrix-synapse:8008`)
 - `MATRIX_USER_ID`
 - `MATRIX_ACCESS_TOKEN`
 - `MATRIX_ROOM_ID`

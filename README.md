@@ -9,8 +9,9 @@ AI Client → MCP Server → Memory API → (Ollama embeddings) → Postgres (pg
 ## Prerequisites
 
 - Docker + Docker Compose
-- Ollama running on the host (default: `http://localhost:11434`)
+- Ollama reachable from the API container (default: `http://localhost:11434` via `host.docker.internal`)
   - Ensure an embedding model is available, e.g. `ollama pull nomic-embed-text`
+  - To use a remote Ollama instance, set `OLLAMA_HOST` (e.g. `100.104.36.96`) and `OLLAMA_PORT` in `.env`
 
 ## Quick start
 
@@ -39,16 +40,55 @@ Notes:
 - `/capture` also returns a `classification` object (category + confidence).
 - `/search` results may include `classification` metadata when available.
 
-## Matrix ingestion (optional)
+## Matrix (optional, in-stack homeserver)
 
-Enable the Matrix bot service (requires access token + room ID):
+This repo can run a full **Matrix Synapse** homeserver in the stack (plus a small TLS proxy so **Element X** can connect over HTTPS) and an optional Matrix bot that captures room messages into Synapse.
+
+Start Matrix services:
 
 ```bash
 docker compose --profile matrix up -d --build
 ```
 
-Set these in `.env`:
-- `MATRIX_HOMESERVER`
+Configure these in `.env`:
+- `MATRIX_SERVER_NAME` (domain used in Matrix IDs, e.g. `localhost`)
+- `MATRIX_PUBLIC_HOST` (what your phone will connect to on your LAN/VPN/Tailscale, e.g. `192.168.1.10`)
+- `MATRIX_TLS_PORT` (default `8448`)
+
+Verify Matrix is up (TLS proxy):
+
+```bash
+curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}:${MATRIX_TLS_PORT:-8448}/_matrix/client/versions" | cat
+```
+
+### Connect from Element X (LAN/VPN)
+
+Use this homeserver URL:
+
+- `https://<MATRIX_PUBLIC_HOST>:<MATRIX_TLS_PORT>` (example: `https://192.168.1.10:8448`)
+
+This uses a local TLS certificate from Caddy’s **internal CA**. To avoid certificate warnings, install and trust the CA root certificate on your phone:
+
+1. Find the proxy container name:
+
+   ```bash
+   docker compose --profile matrix ps
+   ```
+
+2. Copy the CA cert out (path inside container: `/data/pki/authorities/local/root.crt`):
+
+   ```bash
+   docker cp <matrix-proxy-container>:/data/pki/authorities/local/root.crt ./matrix-root.crt
+   ```
+
+3. Install `matrix-root.crt` on your phone and mark it as trusted (platform-specific).
+
+Security note: this Matrix setup is intended for **home network / VPN only**. Don’t expose it to the public internet as-is.
+
+### Matrix capture bot (optional)
+
+If you want room messages automatically stored in Synapse, set in `.env`:
+- `MATRIX_HOMESERVER` (default `http://matrix-synapse:8008`)
 - `MATRIX_USER_ID`
 - `MATRIX_ACCESS_TOKEN`
 - `MATRIX_ROOM_ID`

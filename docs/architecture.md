@@ -28,6 +28,12 @@ AI Client → MCP Server → Memory API → (Ollama embeddings) → Postgres (pg
   - Streamable HTTP: `POST /mcp`
   - Tools: `capture_memory`, `search_memories`
 
+- **matrix-synapse** (optional profile: `matrix`)
+  - Matrix homeserver (Synapse) so mobile clients (Element X) can connect on LAN/VPN
+
+- **matrix-proxy** (optional profile: `matrix`)
+  - Caddy reverse proxy that provides local TLS (internal CA) for the Matrix client-server API
+
 - **matrix-bot** (optional profile: `matrix`)
   - Listens for messages in a configured Matrix room
   - Calls `POST /capture` on the API and replies with the stored ID + category
