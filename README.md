@@ -168,6 +168,9 @@ Copy the `access_token` from the response.
 #### 4c) Create a room (your “inbox”) and get its Room ID
 
 1. Create a room (e.g. “Synapse Inbox”)
+2. **Turn OFF encryption for this room** (create an unencrypted room).
+
+Why: Element X often creates encrypted rooms by default. This minimal `matrix-bot` does **not** support decrypting E2EE messages, so it won’t see your text (and nothing will be stored).
 
 Element X doesn’t always show the raw **Room ID** in the UI. You can fetch it from the homeserver.
 
