@@ -27,8 +27,9 @@ with open(path, 'r', encoding='utf-8') as f:
     cfg = yaml.safe_load(f)
 
 # Local testing defaults. This is not safe for an internet-exposed server.
-if cfg.get('enable_registration') is True:
-    cfg.setdefault('enable_registration_without_verification', True)
+# Needed so Element X can create an account on a LAN/VPN-only server.
+cfg.setdefault('enable_registration', True)
+cfg.setdefault('enable_registration_without_verification', True)
 
 # Provide shared secret for admin/user creation tooling.
 if not cfg.get('registration_shared_secret'):
