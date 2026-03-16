@@ -25,8 +25,12 @@ AI Client → MCP Server → Memory API → (Ollama embeddings) → Postgres (pg
   - `GET /search` → embed query + cosine similarity search
 
 - **mcp**: MCP server on port 8080
-  - Streamable HTTP: `POST /mcp`
-  - Tools: `capture_memory`, `search_memories`
+  - MCP Streamable HTTP transport:
+    - `GET /mcp` opens an SSE stream and returns `MCP-Session-Id`
+    - `POST /mcp` accepts JSON-RPC 2.0 messages (inline response, or **202** + SSE delivery when `MCP-Session-Id` is provided)
+    - `DELETE /mcp` closes the session
+  - Tools: `capture_memory`, `search_memories` (discover via JSON-RPC `tools/list`)
+  - Stdio transport is also available via `mcp/stdio_server.py` (for desktop clients)
 
 - **matrix-synapse** (optional profile: `matrix`)
   - Matrix homeserver (Synapse) so mobile clients (Element X) can connect on LAN/VPN

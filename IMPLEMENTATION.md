@@ -13,7 +13,7 @@ Synapse provides:
 - An **MCP (Model Context Protocol)** server that exposes two tools:
   - `capture_memory`
   - `search_memories`
-- Optional **Matrix**: in-stack Synapse homeserver + local TLS proxy (Element X friendly) + ingestion bot
+- Optional **Matrix**: in-stack Synapse homeserver + local TLS proxy (Element X friendly) + ingestion bot (unencrypted rooms only)
 
 Everything runs in containers **except Ollama**, which is assumed to already be running (local-first).
 
@@ -25,7 +25,7 @@ Everything runs in containers **except Ollama**, which is assumed to already be 
 AI Client
   │
   ▼
-MCP Server (HTTP JSON-RPC)
+MCP Server (MCP Streamable HTTP / JSON-RPC 2.0)
   │  calls
   ▼
 Memory API (FastAPI)
@@ -175,6 +175,12 @@ Bot config (only required if you want ingestion):
 - `MATRIX_USER_ID`
 - `MATRIX_ACCESS_TOKEN`
 - `MATRIX_ROOM_ID`
+
+Bot behavior/constraints (current implementation):
+- The bot auto-accepts room invites (joins when invited).
+- The bot only captures messages from `MATRIX_ROOM_ID` and ignores its own messages.
+- Encrypted rooms (E2EE) are **not supported**: the bot cannot decrypt Megolm events, so it will not ingest content.
+  - If it detects encryption in the configured room, it logs a warning and attempts to send a warning message.
 
 **Important:** the embedding model must exist in Ollama (e.g. `ollama pull nomic-embed-text`).
 
@@ -335,6 +341,15 @@ Transport: MCP **Streamable HTTP**
 - Notifications (messages without `id`) are accepted and return **202**
 - `DELETE /mcp` with `MCP-Session-Id` closes the session (**204**)
 - `GET /mcp/openapi.json` returns OpenAPI (compat for clients that probe under `/mcp`)
+  - Note: this documents the HTTP transport endpoints, not the MCP JSON-RPC method surface; tool schemas come from `tools/list`
+
+### Stdio transport (desktop clients)
+
+For clients that only support MCP over stdio, `mcp/stdio_server.py` implements the same JSON-RPC methods as the HTTP server.
+
+- Input: newline-delimited JSON-RPC 2.0 requests on stdin
+- Output: JSON-RPC 2.0 responses on stdout
+- Tool result formatting differs slightly from the HTTP server (see tool details below)
 
 ### Implemented MCP methods
 
@@ -374,9 +389,10 @@ Arguments:
 
 Behavior:
 - Calls API `GET /search`
-- Returns tool result with:
-  - `structuredContent`: the API JSON
-  - `content`: a JSON-serialized text block for compatibility
+- Returns tool result with `structuredContent` containing the API JSON.
+- `content` differs by transport:
+  - **HTTP Streamable** (`mcp/server.py`): `content[0].text` is the full API JSON serialized as text (maximum compatibility)
+  - **Stdio** (`mcp/stdio_server.py`): `content[0].text` is a short human-readable summary of the top matches (keeps logs readable)
 
 ### Security note (Origin header)
 
@@ -406,6 +422,7 @@ curl -sS http://localhost:8080/health
 
 - No authentication / multi-user support
 - No background ingestion, summarization, or entity extraction
+- Matrix ingestion bot cannot decrypt E2EE rooms (unencrypted rooms only)
 - Embedding dimension fixed to 768 (schema + code)
 
 ---
