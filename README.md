@@ -1,1 +1,3 @@
-# synapse
+# :brain: Synapse
+
+Persistent AI memory
