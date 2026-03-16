@@ -3,8 +3,13 @@
     root /data
   }
 
+  # Prefer HTTP/1.1 + HTTP/2; some clients/networks can be flaky with HTTP/3 (QUIC).
+  servers {
+    protocols h1 h2
+  }
+
   # On-demand TLS is used so clients can connect via LAN IP / Tailnet IP / MagicDNS.
-  # (No global ask/rate-limit configured; keep this service LAN/VPN-only.)
+  # (No global ask/permission configured; keep this service LAN/VPN-only.)
 }
 
 # Local TLS proxy for Matrix client-server API.
@@ -14,5 +19,11 @@
   tls internal {
     on_demand
   }
+
+  # Help clients that perform Matrix client discovery.
+  handle /.well-known/matrix/client {
+    respond {"m.homeserver":{"base_url":"https://{host}"}}
+  }
+
   reverse_proxy matrix-synapse:8008
 }

@@ -71,7 +71,12 @@ curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}:${MATRIX_TLS_PORT:-8448}/_m
 
 Use this homeserver URL:
 
-- `https://<MATRIX_PUBLIC_HOST>:<MATRIX_TLS_PORT>` (example: `https://192.168.1.10:8448`)
+- Preferred (default): `https://<host>` (port **443**)
+- Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
+
+Examples:
+- `https://mac-workstation` (Tailnet/LAN name)
+- `https://mac-workstation:8448`
 
 This uses a local TLS certificate from Caddy’s **internal CA**. To avoid certificate warnings, install and trust the CA root certificate on your phone:
 

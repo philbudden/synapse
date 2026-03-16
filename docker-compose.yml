@@ -60,6 +60,8 @@ services:
       - matrix_caddy_data:/data
     ports:
       - "${MATRIX_TLS_PORT:-8448}:${MATRIX_TLS_PORT:-8448}"
+      # Element X and Matrix discovery often expect HTTPS on 443.
+      - "443:${MATRIX_TLS_PORT:-8448}"
     depends_on:
       - matrix-synapse
     restart: unless-stopped
