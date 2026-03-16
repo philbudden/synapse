@@ -1,4 +1,4 @@
-# Synapse
+# :brain: Synapse
 
 Persistent AI memory: capture thoughts, generate embeddings with Ollama, store in Postgres (pgvector), and retrieve via semantic search. Includes an MCP (Model Context Protocol) server exposing `capture_memory` and `search_memories` tools.
 
