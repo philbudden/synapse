@@ -1,0 +1,12 @@
+{
+  storage file_system {
+    root /data
+  }
+}
+
+# Local TLS proxy for Matrix client-server API.
+# Set MATRIX_PUBLIC_HOST to your LAN/VPN/Tailscale name or IP.
+{$MATRIX_PUBLIC_HOST}:{$MATRIX_TLS_PORT} {
+  tls internal
+  reverse_proxy matrix-synapse:8008
+}

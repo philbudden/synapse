@@ -32,6 +32,38 @@ services:
       - "${MCP_PORT:-8080}:8080"
     restart: unless-stopped
 
+  # Matrix homeserver (matrix.org Synapse). Enabled via the "matrix" profile.
+  # Element X will connect to the TLS proxy on MATRIX_TLS_PORT.
+  matrix-synapse:
+    build: ./matrix-homeserver
+    profiles: ["matrix"]
+    env_file:
+      - .env
+    environment:
+      MATRIX_SERVER_NAME: ${MATRIX_SERVER_NAME:-localhost}
+      MATRIX_REPORT_STATS: ${MATRIX_REPORT_STATS:-no}
+      MATRIX_HTTP_PORT: ${MATRIX_HTTP_PORT:-8008}
+    volumes:
+      - matrix_synapse_data:/data
+    ports:
+      - "${MATRIX_HTTP_PORT:-8008}:8008"
+    restart: unless-stopped
+
+  matrix-proxy:
+    image: caddy:2.8
+    profiles: ["matrix"]
+    environment:
+      MATRIX_PUBLIC_HOST: ${MATRIX_PUBLIC_HOST:-localhost}
+      MATRIX_TLS_PORT: ${MATRIX_TLS_PORT:-8448}
+    volumes:
+      - ./matrix-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - matrix_caddy_data:/data
+    ports:
+      - "${MATRIX_TLS_PORT:-8448}:${MATRIX_TLS_PORT:-8448}"
+    depends_on:
+      - matrix-synapse
+    restart: unless-stopped
+
   matrix-bot:
     build: ./matrix
     profiles: ["matrix"]
@@ -41,7 +73,10 @@ services:
       API_BASE_URL: http://api:8000
     depends_on:
       - api
+      - matrix-synapse
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  matrix_synapse_data:
+  matrix_caddy_data:

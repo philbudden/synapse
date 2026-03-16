@@ -14,11 +14,11 @@ log = logging.getLogger("synapse-matrix")
 
 
 class Settings(BaseSettings):
-    # Matrix
-    matrix_homeserver: str
-    matrix_user_id: str
-    matrix_access_token: str
-    matrix_room_id: str
+    # Matrix (optional; if not set, the bot will idle rather than crash-loop)
+    matrix_homeserver: str | None = "http://matrix-synapse:8008"
+    matrix_user_id: str | None = None
+    matrix_access_token: str | None = None
+    matrix_room_id: str | None = None
 
     # Synapse API (reachable from this container)
     api_base_url: str = "http://api:8000"
@@ -61,6 +61,13 @@ async def capture_thought(content: str, source: str) -> CaptureResult:
 
 
 async def main() -> None:
+    if not settings.matrix_homeserver or not settings.matrix_user_id or not settings.matrix_access_token or not settings.matrix_room_id:
+        log.warning(
+            "Matrix bot not configured (set MATRIX_USER_ID, MATRIX_ACCESS_TOKEN, MATRIX_ROOM_ID; optionally MATRIX_HOMESERVER). Idling."
+        )
+        while True:
+            await asyncio.sleep(3600)
+
     client = AsyncClient(settings.matrix_homeserver, settings.matrix_user_id)
     client.access_token = settings.matrix_access_token
 
