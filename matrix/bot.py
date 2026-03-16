@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import httpx
 from nio import AsyncClient, MatrixRoom, RoomMessageText
 from nio.events.invite_events import InviteMemberEvent
+from nio.events.room_events import MegolmEvent, RoomEncryptionEvent
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -77,6 +78,8 @@ async def main() -> None:
     client = AsyncClient(settings.matrix_homeserver, settings.matrix_user_id)
     client.access_token = settings.matrix_access_token
 
+    warned_encryption: set[str] = set()
+
     async def on_message(room: MatrixRoom, event: RoomMessageText) -> None:
         if not settings.matrix_room_id or room.room_id != settings.matrix_room_id:
             return
@@ -110,7 +113,39 @@ async def main() -> None:
         except Exception as e:
             log.warning("Failed to join invited room %s: %s", room.room_id, e)
 
+    async def warn_encrypted(room_id: str) -> None:
+        if room_id in warned_encryption:
+            return
+        warned_encryption.add(room_id)
+        log.warning(
+            "Room %s is encrypted (E2EE). This minimal bot cannot decrypt messages. Use an unencrypted room for ingestion.",
+            room_id,
+        )
+        try:
+            await client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content={
+                    "msgtype": "m.text",
+                    "body": "This room is encrypted (E2EE). I can't read messages here. Create a new unencrypted room for Synapse ingestion and invite me there.",
+                },
+            )
+        except Exception as e:
+            log.warning("Failed to send encryption warning to %s: %s", room_id, e)
+
+    async def on_room_encryption(room: MatrixRoom, event: RoomEncryptionEvent) -> None:
+        if settings.matrix_room_id and room.room_id != settings.matrix_room_id:
+            return
+        await warn_encrypted(room.room_id)
+
+    async def on_megolm(room: MatrixRoom, event: MegolmEvent) -> None:
+        if settings.matrix_room_id and room.room_id != settings.matrix_room_id:
+            return
+        await warn_encrypted(room.room_id)
+
     client.add_event_callback(on_invite, InviteMemberEvent)
+    client.add_event_callback(on_room_encryption, RoomEncryptionEvent)
+    client.add_event_callback(on_megolm, MegolmEvent)
     client.add_event_callback(on_message, RoomMessageText)
 
     log.info("Starting Matrix sync (capture room=%s)", settings.matrix_room_id)
