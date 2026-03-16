@@ -15,11 +15,8 @@ CREATE TABLE IF NOT EXISTS memories (
     embedding VECTOR(768)
 );
 
--- For small datasets, sequential scans are fine; ivfflat helps once the dataset grows.
 -- Note: ivfflat indexes require ANALYZE for best performance.
--- ivfflat is approximate; for small datasets, large `lists` can behave poorly.
--- Tune `lists` upward as your dataset grows (rule of thumb: ~sqrt(rows)).
 CREATE INDEX IF NOT EXISTS memories_embedding_idx
 ON memories
 USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 1);
+WITH (lists = 100);
