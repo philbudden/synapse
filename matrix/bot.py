@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import httpx
 from nio import AsyncClient, MatrixRoom, RoomMessageText
+from nio.events.invite_events import InviteMemberEvent
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,18 +62,23 @@ async def capture_thought(content: str, source: str) -> CaptureResult:
 
 
 async def main() -> None:
-    if not settings.matrix_homeserver or not settings.matrix_user_id or not settings.matrix_access_token or not settings.matrix_room_id:
+    if not settings.matrix_homeserver or not settings.matrix_user_id or not settings.matrix_access_token:
         log.warning(
-            "Matrix bot not configured (set MATRIX_USER_ID, MATRIX_ACCESS_TOKEN, MATRIX_ROOM_ID; optionally MATRIX_HOMESERVER). Idling."
+            "Matrix bot not configured (set MATRIX_USER_ID, MATRIX_ACCESS_TOKEN; optionally MATRIX_HOMESERVER). Idling."
         )
         while True:
             await asyncio.sleep(3600)
+
+    if not settings.matrix_room_id:
+        log.warning(
+            "Matrix bot has no MATRIX_ROOM_ID yet; it will accept invites but will not capture messages until MATRIX_ROOM_ID is set."
+        )
 
     client = AsyncClient(settings.matrix_homeserver, settings.matrix_user_id)
     client.access_token = settings.matrix_access_token
 
     async def on_message(room: MatrixRoom, event: RoomMessageText) -> None:
-        if room.room_id != settings.matrix_room_id:
+        if not settings.matrix_room_id or room.room_id != settings.matrix_room_id:
             return
         if event.sender == settings.matrix_user_id:
             return
@@ -97,9 +103,17 @@ async def main() -> None:
             content={"msgtype": "m.text", "body": msg},
         )
 
+    async def on_invite(room: MatrixRoom, event: InviteMemberEvent) -> None:
+        try:
+            log.info("Invited to room %s; joining...", room.room_id)
+            await client.join(room.room_id)
+        except Exception as e:
+            log.warning("Failed to join invited room %s: %s", room.room_id, e)
+
+    client.add_event_callback(on_invite, InviteMemberEvent)
     client.add_event_callback(on_message, RoomMessageText)
 
-    log.info("Starting Matrix sync for room %s", settings.matrix_room_id)
+    log.info("Starting Matrix sync (capture room=%s)", settings.matrix_room_id)
 
     try:
         while True:
