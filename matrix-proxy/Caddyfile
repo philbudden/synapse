@@ -4,11 +4,7 @@
   }
 
   # On-demand TLS is used so clients can connect via LAN IP / Tailnet IP / MagicDNS.
-  # Add a minimal rate limit to reduce abuse risk.
-  on_demand_tls {
-    interval 2m
-    burst 10
-  }
+  # (No global ask/rate-limit configured; keep this service LAN/VPN-only.)
 }
 
 # Local TLS proxy for Matrix client-server API.
