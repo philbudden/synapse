@@ -31,6 +31,16 @@ with open(path, 'r', encoding='utf-8') as f:
 cfg.setdefault('enable_registration', True)
 cfg.setdefault('enable_registration_without_verification', True)
 
+# If provided, set a stable public_baseurl (clients can be picky about this).
+# Examples:
+# - http://mac-workstation:8008
+# - https://mac-workstation (when using the TLS proxy on 443)
+public_baseurl = os.environ.get('MATRIX_PUBLIC_BASE_URL')
+if public_baseurl:
+    if not public_baseurl.endswith('/'):
+        public_baseurl += '/'
+    cfg['public_baseurl'] = public_baseurl
+
 # Provide shared secret for admin/user creation tooling.
 if not cfg.get('registration_shared_secret'):
     cfg['registration_shared_secret'] = secrets.token_hex(32)

@@ -153,8 +153,8 @@ TLS proxy certificate options:
   and placing the files in `./.local/matrix-tls/` (bind-mounted into the proxy as `/tls`).
 
 Element X connection URL:
-- Preferred: `https://<host>` (port 443)
-- Alternate: `https://<host>:<MATRIX_TLS_PORT>`
+- Simplest (LAN-only): `http://<host>:8008`
+- HTTPS (TLS proxy): `https://<host>` (port 443) or `https://<host>:<MATRIX_TLS_PORT>`
 
 Caddy internal CA root cert path (inside the proxy container):
 - `/data/pki/authorities/local/root.crt`

@@ -70,19 +70,25 @@ curl -kfsS "https://${MATRIX_PUBLIC_HOST:-localhost}/_matrix/client/versions" | 
 
 ### Connect from Element X (LAN/VPN)
 
-Use this homeserver URL:
+Option A (simplest, local-only HTTP):
+- Homeserver URL: `http://<host>:8008`
+- Example: `http://mac-workstation:8008`
 
-- Preferred (default): `https://<host>` (port **443**)
+Option B (HTTPS via TLS proxy):
+- Preferred: `https://<host>` (port **443**)
 - Alternate: `https://<host>:<MATRIX_TLS_PORT>` (default **8448**)
 
 Examples:
-- `https://mac-workstation` (LAN / MagicDNS short name)
-- `https://mac-workstation.tailXXXX.ts.net` (Tailscale MagicDNS FQDN)
-- `https://mac-workstation:8448` (alternate if you prefer the Matrix port)
+- `https://mac-workstation`
+- `https://mac-workstation:8448`
 
-By default this uses a local TLS certificate from Caddy’s **internal CA**.
+TLS notes:
+- By default the proxy uses a local TLS certificate from Caddy’s **internal CA**.
+- If iOS shows **“This Connection Is Not Private”**, you must either trust the CA root on the phone or use a publicly-trusted certificate.
 
-If iOS continues to show **“This Connection Is Not Private”**, the simplest fix is to use a **publicly-trusted** certificate via Tailscale:
+If you can’t get Tailscale TLS certs, prefer Option A (HTTP) for LAN-only.
+
+If you do have a publicly-trusted cert available, you can configure the proxy like this:
 
 1. On the host, generate a cert for your MagicDNS name:
 
