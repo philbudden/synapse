@@ -326,11 +326,15 @@ Response:
 
 Endpoint: `http://localhost:8080/mcp`
 
-Transport: MCP **Streamable HTTP** (minimal implementation)
+Transport: MCP **Streamable HTTP**
 
-- `GET /mcp` returns **405** (SSE stream not implemented in this minimal build)
-- `POST /mcp` accepts a single JSON-RPC message and returns `application/json`
+- `GET /mcp` opens an SSE stream and returns an `MCP-Session-Id` header
+- `POST /mcp` accepts a single JSON-RPC message
+  - Without `MCP-Session-Id`: returns `application/json` inline
+  - With `MCP-Session-Id`: returns **202** and emits the JSON-RPC response on the SSE stream
 - Notifications (messages without `id`) are accepted and return **202**
+- `DELETE /mcp` with `MCP-Session-Id` closes the session (**204**)
+- `GET /mcp/openapi.json` returns OpenAPI (compat for clients that probe under `/mcp`)
 
 ### Implemented MCP methods
 
@@ -401,7 +405,6 @@ curl -sS http://localhost:8080/health
 ## Known limitations (intentional for minimal phase)
 
 - No authentication / multi-user support
-- No SSE streaming for MCP (POST-only JSON responses)
 - No background ingestion, summarization, or entity extraction
 - Embedding dimension fixed to 768 (schema + code)
 
@@ -421,7 +424,6 @@ Common next steps that fit this design:
 3. **More MCP capabilities**
    - Expose memories as MCP Resources
    - Add prompts for summarization workflows
-   - Implement SSE stream support for Streamable HTTP
 
 4. **Index tuning / scaling**
    - Increase ivfflat `lists` and set `ivfflat.probes`

@@ -262,11 +262,26 @@ The MCP server provides two tools:
 - `capture_memory` — store a memory
 - `search_memories` — semantic search
 
-### Option A — Use an HTTP MCP client
+### Option A — Use an HTTP MCP client (recommended)
 
 If your client supports **HTTP MCP**, point it at:
 
 - `http://localhost:8080/mcp`
+
+#### OpenWebUI notes
+
+If you’re using OpenWebUI and it looks like the Synapse tool is never called:
+
+1. Make sure OpenWebUI can reach the URL (from another machine, use `http://<your-host-ip>:8080/mcp`).
+2. In the chat, ensure the Synapse tool is enabled/active for the conversation.
+3. Use a model/config that supports tool calling.
+4. Verify the MCP server is being invoked by watching logs:
+
+```bash
+docker compose logs -f --tail=200 mcp
+```
+
+When it’s working, you should see MCP methods like `initialize`, `tools/list`, and `tools/call`.
 
 ### Option B — Claude Desktop (stdio)
 
