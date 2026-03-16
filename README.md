@@ -55,6 +55,10 @@ Configure these in `.env`:
 - `MATRIX_PUBLIC_HOST` (what your phone will connect to on your LAN/VPN/Tailscale, e.g. `192.168.1.10`)
 - `MATRIX_TLS_PORT` (default `8448`)
 
+Notes:
+- On first start, Synapse generates `homeserver.yaml` into its persistent `/data` volume. If you change `MATRIX_SERVER_NAME` later, wipe the Matrix volume (`docker compose down -v`) to regenerate.
+- Registration is enabled by default for **LAN/VPN-only** convenience.
+
 Verify Matrix is up (TLS proxy):
 
 ```bash

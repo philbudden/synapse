@@ -147,6 +147,10 @@ Element X connection URL:
 Caddy internal CA root cert path (inside the proxy container):
 - `/data/pki/authorities/local/root.crt`
 
+Operational notes:
+- Synapse generates `homeserver.yaml` into its persistent `/data` volume on first run. If you need to change `MATRIX_SERVER_NAME` after initial start, wipe the Matrix volume to regenerate config.
+- Registration is enabled by default for local-only usage; do not expose this to the public internet.
+
 Bot config (only required if you want ingestion):
 - `MATRIX_HOMESERVER` (default `http://matrix-synapse:8008`)
 - `MATRIX_USER_ID`
