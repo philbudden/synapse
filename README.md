@@ -286,6 +286,12 @@ docker compose logs -f --tail=200 mcp
 
 When it’s working, you should see MCP methods like `initialize`, `tools/list`, and `tools/call`.
 
+##### Add OpenWebUI Config
+
+1. Goto Admin Panel -> Settings -> Tools
+2. Under General/Manage Tool Servers click `Import`
+3. Select the `tool-server-0.json` which is included in this repository
+
 ### Option B — Claude Desktop (stdio)
 
 Claude Desktop uses MCP over a local command. This repo ships a stdio entrypoint inside the MCP Docker image.
