@@ -7,7 +7,17 @@ from typing import Any
 
 import httpx
 
-from server import SUPPORTED_PROTOCOL_VERSIONS, TOOLS, _api_capture, _api_search, _jsonrpc_error, _jsonrpc_result, _require_request
+from server import (
+    SUPPORTED_PROTOCOL_VERSIONS,
+    TOOLS,
+    _api_capture,
+    _api_get_structured_memory,
+    _api_search,
+    _format_combined_context,
+    _jsonrpc_error,
+    _jsonrpc_result,
+    _require_request,
+)
 
 
 async def _handle_request(msg: dict[str, Any]) -> dict[str, Any] | None:
@@ -109,6 +119,62 @@ async def _handle_request(msg: dict[str, Any]) -> dict[str, Any] | None:
             result = {
                 "content": [{"type": "text", "text": summary}],
                 "structuredContent": api_res,
+                "isError": False,
+            }
+            return _jsonrpc_result(request_id, result)
+
+        if name == "get_structured_memory":
+            key = arguments.get("key")
+            if not isinstance(key, str) or not key.strip():
+                result = {"content": [{"type": "text", "text": "key is required"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+
+            try:
+                api_res = await _api_get_structured_memory(key.strip())
+            except httpx.HTTPError as e:
+                result = {"content": [{"type": "text", "text": f"API error calling /structured_memory: {e}"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+
+            text = json.dumps(api_res, ensure_ascii=False)
+            result = {
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": api_res,
+                "isError": False,
+            }
+            return _jsonrpc_result(request_id, result)
+
+        if name == "get_context":
+            query = arguments.get("query")
+            limit = arguments.get("limit", 5)
+            key = arguments.get("key")
+            if not isinstance(query, str) or not query.strip():
+                result = {"content": [{"type": "text", "text": "query is required"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+            if not isinstance(limit, int):
+                result = {"content": [{"type": "text", "text": "limit must be an integer"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+            if not isinstance(key, str) or not key.strip():
+                result = {"content": [{"type": "text", "text": "key is required"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+
+            try:
+                structured_res, search_res = await asyncio.gather(
+                    _api_get_structured_memory(key.strip()),
+                    _api_search(query.strip(), limit),
+                )
+            except httpx.HTTPError as e:
+                result = {"content": [{"type": "text", "text": f"API error building context: {e}"}], "isError": True}
+                return _jsonrpc_result(request_id, result)
+
+            combined = _format_combined_context(structured_res, search_res, query.strip())
+            structured_payload = {
+                "structured": structured_res,
+                "retrieved": search_res,
+                "combined": combined,
+            }
+            result = {
+                "content": [{"type": "text", "text": combined}],
+                "structuredContent": structured_payload,
                 "isError": False,
             }
             return _jsonrpc_result(request_id, result)

@@ -123,6 +123,43 @@ def _require_request(msg: dict[str, Any]) -> tuple[Any, str, dict[str, Any]]:
     return msg["id"], method, params
 
 
+def _render_structured_memory(value: Any) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=False)
+
+
+def _format_combined_context(
+    structured: dict[str, Any],
+    retrieved: dict[str, Any],
+    query: str,
+) -> str:
+    lines: list[str] = ["## Structured Context (Authoritative)"]
+
+    key = structured.get("key")
+    value = structured.get("value")
+    if key:
+        lines.append("")
+        lines.append(f"### {key}")
+        if value is None:
+            lines.append("(none)")
+        else:
+            lines.append(_render_structured_memory(value))
+    else:
+        lines.append("")
+        lines.append("(none)")
+
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## Retrieved Context")
+    lines.append(_render_structured_memory(retrieved))
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## User Query")
+    lines.append(query)
+    return "\n".join(lines)
+
+
 async def _api_capture(content: str, source: str | None) -> dict[str, Any]:
     url = f"{settings.api_base_url}/capture"
     payload: dict[str, Any] = {"content": content}
@@ -141,6 +178,15 @@ async def _api_search(query: str, limit: int) -> dict[str, Any]:
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
         resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _api_get_structured_memory(key: str) -> dict[str, Any]:
+    url = f"{settings.api_base_url}/structured_memory/{key}"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
+        resp = await client.get(url)
         resp.raise_for_status()
         return resp.json()
 
@@ -170,6 +216,32 @@ TOOLS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "get_structured_memory",
+        "title": "Get Structured Memory",
+        "description": "Retrieve structured, authoritative user context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Structured memory key"},
+            },
+            "required": ["key"],
+        },
+    },
+    {
+        "name": "get_context",
+        "title": "Get Combined Context",
+        "description": "Combine structured memory and semantic search for prompt injection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Structured memory key"},
+                "query": {"type": "string", "description": "Semantic search query"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
+            },
+            "required": ["key", "query"],
         },
     },
 ]
@@ -299,9 +371,9 @@ async def mcp_post(
                     "name": "synapse-mcp",
                     "title": "Synapse MCP",
                     "version": "0.1.0",
-                    "description": "MCP server exposing persistent memory capture and semantic search.",
+                    "description": "MCP server exposing persistent memory capture, search, and structured context.",
                 },
-                "instructions": "Use capture_memory to store memories and search_memories to retrieve related ones.",
+                "instructions": "Use capture_memory to store memories, search_memories to retrieve related ones, and get_context for combined prompt context.",
             }
             payload = _jsonrpc_result(request_id, result)
             return await _deliver(payload)
@@ -359,6 +431,65 @@ async def mcp_post(
                 # Provide both unstructured and structured for maximum client compatibility.
                 text = json.dumps(api_res, ensure_ascii=False)
                 result = {"content": [{"type": "text", "text": text}], "structuredContent": api_res, "isError": False}
+                return await _deliver(_jsonrpc_result(request_id, result))
+
+            if name == "get_structured_memory":
+                key = arguments.get("key")
+                if not isinstance(key, str) or not key.strip():
+                    result = {"content": [{"type": "text", "text": "key is required"}], "isError": True}
+                    return await _deliver(_jsonrpc_result(request_id, result))
+
+                try:
+                    api_res = await _api_get_structured_memory(key.strip())
+                except httpx.HTTPError as e:
+                    result = {
+                        "content": [{"type": "text", "text": f"API error calling /structured_memory: {e}"}],
+                        "isError": True,
+                    }
+                    return await _deliver(_jsonrpc_result(request_id, result))
+
+                text = json.dumps(api_res, ensure_ascii=False)
+                result = {
+                    "content": [{"type": "text", "text": text}],
+                    "structuredContent": api_res,
+                    "isError": False,
+                }
+                return await _deliver(_jsonrpc_result(request_id, result))
+
+            if name == "get_context":
+                query = arguments.get("query")
+                limit = arguments.get("limit", 5)
+                key = arguments.get("key")
+                if not isinstance(query, str) or not query.strip():
+                    result = {"content": [{"type": "text", "text": "query is required"}], "isError": True}
+                    return await _deliver(_jsonrpc_result(request_id, result))
+                if not isinstance(limit, int):
+                    result = {"content": [{"type": "text", "text": "limit must be an integer"}], "isError": True}
+                    return await _deliver(_jsonrpc_result(request_id, result))
+                if not isinstance(key, str) or not key.strip():
+                    result = {"content": [{"type": "text", "text": "key is required"}], "isError": True}
+                    return await _deliver(_jsonrpc_result(request_id, result))
+
+                try:
+                    structured_res, search_res = await asyncio.gather(
+                        _api_get_structured_memory(key.strip()),
+                        _api_search(query.strip(), limit),
+                    )
+                except httpx.HTTPError as e:
+                    result = {"content": [{"type": "text", "text": f"API error building context: {e}"}], "isError": True}
+                    return await _deliver(_jsonrpc_result(request_id, result))
+
+                combined = _format_combined_context(structured_res, search_res, query.strip())
+                structured_payload = {
+                    "structured": structured_res,
+                    "retrieved": search_res,
+                    "combined": combined,
+                }
+                result = {
+                    "content": [{"type": "text", "text": combined}],
+                    "structuredContent": structured_payload,
+                    "isError": False,
+                }
                 return await _deliver(_jsonrpc_result(request_id, result))
 
             payload = _jsonrpc_error(request_id, -32602, "Unknown tool", {"name": name})
