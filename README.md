@@ -84,6 +84,12 @@ Search:
 curl -sS 'http://localhost:8000/search?query=coffee&limit=5' | cat
 ```
 
+Structured memory (authoritative JSON):
+
+```bash
+curl -sS 'http://localhost:8000/structured_memory/infrastructure' | cat
+```
+
 ---
 
 ## 2) Capture memories using Matrix (Element X)
@@ -257,10 +263,12 @@ Notes:
 - This project has **no authentication** by default. Only expose MCP to trusted networks (LAN/VPN), not the public internet.
 - If you’re calling MCP from a browser-based app, you may need to set `MCP_ALLOWED_ORIGINS` in `.env`.
 
-The MCP server provides two tools:
+The MCP server provides tools for capture, search, and structured context:
 
 - `capture_memory` — store a memory
 - `search_memories` — semantic search
+- `get_structured_memory` — fetch authoritative JSON by key
+- `get_context` — combine structured memory + semantic search for prompt injection
 
 ### Option A — Use an HTTP MCP client (recommended)
 

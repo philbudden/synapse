@@ -1,4 +1,4 @@
-# Synapse — Minimal Implementation (Local‑First)
+# Synapse — Minimal Implementation (Local-First)
 
 This document describes the **implemented** minimal Synapse system in this repository. It is intended to be ingested by an LLM when planning future phases.
 
@@ -10,9 +10,12 @@ Synapse provides:
 - Embedding generation via **Ollama**
 - Automatic **classification** of captures (using embedding similarity to category prototypes)
 - Vector similarity search via **PostgreSQL + pgvector**
+- Structured memory retrieval (authoritative JSON)
 - An **MCP (Model Context Protocol)** server that exposes two tools:
   - `capture_memory`
   - `search_memories`
+  - `get_structured_memory`
+  - `get_context`
 - Optional **Matrix**: in-stack Synapse homeserver + local TLS proxy (Element X friendly) + ingestion bot (unencrypted rooms only)
 
 Everything runs in containers **except Ollama**, which is assumed to already be running (local-first).
@@ -33,7 +36,7 @@ Memory API (FastAPI)
   ├──────────────► Ollama (/api/embeddings)
   │
   ▼
-Postgres (pgvector)
+Postgres (pgvector + structured memory)
 
 Matrix User (Element X)
   │  HTTP (LAN/VPN, simplest)
@@ -49,21 +52,24 @@ Matrix Bot (optional) ──calls──► Memory API
 ### Components
 
 1. **Postgres service** (`pgvector/pgvector:pg15`)
-   - Stores captures + memories
-   - Stores embeddings as `VECTOR(768)`
-   - Provides cosine-distance search via pgvector operators
+    - Stores captures + memories
+    - Stores embeddings as `VECTOR(768)`
+    - Stores structured memory as JSONB
+    - Provides cosine-distance search via pgvector operators
 
 2. **API service** (`api/`)
-   - FastAPI app: `api/app/main.py`
-   - Endpoints:
-     - `POST /capture`
-     - `GET /search`
-   - Calls Ollama to generate embeddings
+    - FastAPI app: `api/app/main.py`
+    - Endpoints:
+      - `POST /capture`
+      - `GET /search`
+      - `GET /structured_memory/{key}`
+    - Calls Ollama to generate embeddings
 
 3. **MCP service** (`mcp/`)
-   - FastAPI app: `mcp/server.py` (Streamable HTTP)
-   - Stdio entrypoint: `mcp/stdio_server.py` (for desktop clients)
-   - Translates MCP tool calls into API requests (thin adapter; no business logic)
+    - FastAPI app: `mcp/server.py` (Streamable HTTP)
+    - Stdio entrypoint: `mcp/stdio_server.py` (for desktop clients)
+    - Translates MCP tool calls into API requests (thin adapter; no business logic)
+    - Tools: `capture_memory`, `search_memories`, `get_structured_memory`, `get_context`
 
 ---
 
@@ -228,6 +234,12 @@ The API classifies content using embedding similarity to a small set of category
 - `content` TEXT not null
 - `embedding` VECTOR(768)
 
+`structured_memory`
+
+- `key` TEXT PK
+- `value` JSONB not null
+- `updated_at` TIMESTAMP default `now()`
+
 ### Index
 
 `memories_embedding_idx` is an **ivfflat** index on `embedding` using cosine distance:
@@ -326,6 +338,21 @@ Response:
 }
 ```
 
+### `GET /structured_memory/{key}`
+
+Fetch structured memory JSON by key.
+
+Response:
+
+```json
+{
+  "key": "infrastructure",
+  "value": {
+    "postgres": "postgres.internal"
+  }
+}
+```
+
 ---
 
 ## MCP service
@@ -361,9 +388,9 @@ For clients that only support MCP over stdio, `mcp/stdio_server.py` implements t
 - `ping`
   - Returns `{}`
 - `tools/list`
-  - Returns the two Synapse tools
+  - Returns the Synapse tools
 - `tools/call`
-  - Executes `capture_memory` or `search_memories`
+  - Executes `capture_memory`, `search_memories`, `get_structured_memory`, or `get_context`
 
 ### Tools
 
@@ -393,6 +420,34 @@ Behavior:
 - `content` differs by transport:
   - **HTTP Streamable** (`mcp/server.py`): `content[0].text` is the full API JSON serialized as text (maximum compatibility)
   - **Stdio** (`mcp/stdio_server.py`): `content[0].text` is a short human-readable summary of the top matches (keeps logs readable)
+
+#### `get_structured_memory`
+
+Arguments:
+
+```json
+{ "key": "infrastructure" }
+```
+
+Behavior:
+- Calls API `GET /structured_memory/{key}`
+- Returns tool result with `structuredContent` containing the API JSON
+
+#### `get_context`
+
+Arguments:
+
+```json
+{ "key": "infrastructure", "query": "postgres host", "limit": 5 }
+```
+
+Behavior:
+- Calls API `GET /structured_memory/{key}` and `GET /search`
+- Returns combined prompt text in `content[0].text`
+- Returns `structuredContent` containing:
+  - `structured` (structured memory payload)
+  - `retrieved` (vector search payload)
+  - `combined` (the formatted prompt section)
 
 ### Security note (Origin header)
 
