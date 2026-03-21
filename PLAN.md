@@ -1,477 +1,157 @@
-# Synapse Minimal (Local-First) -- Implementation Plan
+# Synapse Structured Memory -- Implementation Plan
 
-This document is intended for use by an **LLM coding assistant** to implement a minimal, self-contained "Synapse" system that provides:
-- Persistent AI memory
-- Vector search over captured thoughts
-- A local ingestion + retrieval API
-- MCP (Model Context Protocol) tool interface for AI clients
-- Container-native deployment
+This document is intended for use by an **LLM coding assistant** to implement a structured memeory layer to Synapse.
 
-The system is designed so that **any MCP-compatible AI client** (Claude Desktop, ChatGPT connectors, Cursor, etc) can retrieve and store memories.
+### Objective
 
-The implementation should be **simple, robust, and production-friendly** while remaining small enough for a homelab or personal server.
+Add a **structured memory layer** alongside the existing PGVector-based memory system.
 
-Target runtime environments:
-- Docker / Docker Compose
-- Kubernetes (optional later)
-- Local machine or homelab
-- Raspberry Pi cluster
+This layer will:
+- Store authoritative, user-curated context (e.g. infrastructure, preferences)
+- Be retrieved deterministically (no embeddings)
+- Be injected into prompts before LLM responses
 
-Ollama is assumed to **already be running**, but the system must allow:
-- default connection to local Ollama
-- configuration of a remote Ollama instance
+This is NOT a replacement for vector memory — it is a complementary system.
 
 ---
 
-## 1. Project Goals
+## High-Level Architecture Changes
 
-The system must:
-1. Store captured thoughts
-2. Generate embeddings for semantic search
-3. Store vectors in PostgreSQL using pgvector
-4. Allow semantic search over memories
-5. Expose capture + search via MCP tools
-6. Run entirely in containers except Ollama
-7. Be easy for a non-expert to deploy
+Current:
 
-The system should remain **minimal**.
+LLM → MCP → API → PGVector (search_memories)
 
-Target code size:
-- `\~300--500 lines Python`
+Target:
+
+1. Fetch structured memory (PostgreSQL JSONB)
+2. Fetch vector memory (existing search_memories)
+3. Combine both
+4. Return to LLM
 
 ---
 
-## 2. High-Level Architecture
+## Phase 1 — Database Layer
 
-System architecture:
-```code
-Capture → API → Embeddings → Postgres (pgvector) → MCP → AI Clients
-```
+### 1.1 Create Structured Memory Table
 
-Diagram:
-```code
-    AI Client (ChatGPT / Claude / Cursor)
-                │
-                ▼
-           MCP Server
-                │
-                ▼
-           Memory API
-                │
-        ┌───────┴────────┐
-        ▼                ▼
-    Embeddings        Database
-      (Ollama)      PostgreSQL + pgvector
-```
+Modify:
+`db/init.sql`
 
-### Responsibilities:
+Add:
 
-API Service
-- capture memories
-- generate embeddings
-- store memories
-- run semantic search
-
-Database
-- persistent storage
-- vector similarity search
-
-MCP Server
-- expose memory tools to AI clients
-
----
-
-## 3. Technology Stack
-
-- Language: Python 3.11+
-- Framework: FastAPI
-- Database: PostgreSQL 15+ with pgvector
-- Container Runtime: Docker
-- Embeddings: Ollama
-- Vector Extension: pgvector
-
----
-
-## 4. Repository Structure
-
-The project should generate the following layout:
-```code
-synapse/
-│
-├── docker-compose.yml
-├── .env.example
-├── README.md
-├── PLAN.md
-│
-├── db/
-│   └── init.sql
-│
-├── api/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── app/
-│       ├── __init__.py
-│       ├── main.py
-│       ├── config.py
-│       ├── db.py
-│       ├── embeddings.py
-│       ├── models.py
-│       └── search.py
-│
-├── mcp/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── server.py
-│
-└── docs/
-    └── architecture.md
-```
-
----
-
-## 5. Environment Variables
-
-The system must use environment variables.
-
-Required variables:
-- POSTGRES_HOST
-- POSTGRES_PORT
-- POSTGRES_DB
-- POSTGRES_USER
-- POSTGRES_PASSWORD
-- OLLAMA_HOST
-- OLLAMA_PORT
-- EMBED_MODEL
-
-Defaults:
-- OLLAMA_HOST=host.docker.internal OLLAMA_PORT=11434
-- EMBED_MODEL=nomic-embed-text
-
-Users must be able to override these values.
-
----
-
-## 6. Database Schema
-
-Create PostgreSQL schema with pgvector enabled.
-
-SQL:
 ```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-Captures table:
-```sql
-CREATE TABLE captures (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source TEXT,
-    content TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE IF NOT EXISTS structured_memory (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-Memories table:
-```sql
-CREATE TABLE memories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    capture_id UUID REFERENCES captures(id),
-    content TEXT NOT NULL,
-    embedding VECTOR(768)
-);
+## Phase 2 — API Layer
+
+### 2.1 Add Structured Memory Access
+
+Modify:
+```code
+api/app/db.py
 ```
 
-Index:
-```sql
-CREATE INDEX memories_embedding_idx
-ON memories
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
+Add function:
+```python
+def get_structured_memory(key: str):
+    query = "SELECT value FROM structured_memory WHERE key = %s"
+    result = execute_query(query, (key,))
+    return result[0]["value"] if result else None
 ```
 
----
+### 2.2 Add API Endpoint
 
-## 7. API Service Requirements
+Modify:
+```code
+api/app/main.py
+```
 
-The API must be implemented using **FastAPI**.
+Add endpoint:
+```python
+@app.get("/structured_memory/{key}")
+def fetch_structured_memory(key: str):
+    value = get_structured_memory(key)
+    if value is None:
+        return {"key": key, "value": None}
+    return {"key": key, "value": value}
+```
 
-### Endpoint: Capture Memory
+## Phase 3 — MCP Server Integration
 
-**POST** `/capture`
+### 3.1 Add New Tool
 
-Stores a new memory and generates its embedding.
+Modify:
+```code
+mcp/server.py
+```
 
-#### Request Body
-
-```json
+```python
 {
-  "content": "string",
-  "source": "optional string"
+  "name": "get_structured_memory",
+  "description": "Retrieve structured, authoritative user context",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "key": {"type": "string"}
+    },
+    "required": ["key"]
+  }
 }
 ```
 
-#### Processing Steps
-
-1. Store the capture in the `captures` table.
-2. Generate an embedding using Ollama.
-3. Store the memory and embedding in the `memories` table.
-
-#### Response
-
-```json
-{
-  "status": "stored",
-  "id": "uuid"
-}
+### 3.2 Implement Tool Handler
+```python
+elif tool_name == "get_structured_memory":
+    key = arguments["key"]
+    response = requests.get(f"{API_URL}/structured_memory/{key}")
+    return response.json()
 ```
 
-### Endpoint: Semantic Search
+## Phase 4 — Prompt Injection Layer (CRITICAL)
 
-**GET** `/search`
+This is where most of the value comes from.
 
-Performs semantic search over stored memories.
+### 4.1 Update Tool Usage Pattern
 
-#### Query Parameters
+New flow:
+- Call get_structured_memory
+- Call search_memories
+- Combine both before responding
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| query | string | Search text to embed and compare | required |
-| limit | integer | Maximum results to return | 5 |
+### 4.2 Inject Structured Context into Prompt
 
-#### Processing Steps
+Format:
+```markdown
+## Structured Context (Authoritative)
 
-1. Generate an embedding for the `query` using Ollama.
-2. Perform a vector similarity search against stored embeddings.
-3. Rank results by cosine similarity.
-4. Return the top results.
+### Infrastructure
+<render JSON as readable text>
 
-#### Response
-
-```json
-{
-  "results": [
-    {
-      "content": "...",
-      "score": 0.82
-    }
-  ]
-}
-```
+### Preferences
+<render JSON>
 
 ---
 
-## 8. Ollama Integration
-
-Embeddings should be generated via the **Ollama HTTP API**.
-
-### Endpoint
-
-**POST** `/api/embeddings`
-
-### Example Request
-
-```json
-{
-  "model": "nomic-embed-text",
-  "prompt": "example text"
-}
-```
-
-### Requirements
-
-The API must support:
-- Local Ollama instance
-- Remote Ollama instance
-
-Connection details must be configurable via **environment variables**.
-
-### Error Handling
-
-- Timeouts must be handled gracefully.
-- If Ollama is unreachable, the API should return a clear error response.
+## Retrieved Context
+<existing vector search results>
 
 ---
 
-## 9. MCP Server
-
-The MCP server exposes two tools for AI clients.
-
-### Tool: `capture_memory`
-
-#### Arguments
-
-| Argument | Type | Description |
-|--------|------|-------------|
-| content | string | Memory content to store |
-| source | string | Optional origin of the memory |
-
-#### Implementation
-
-Calls the API endpoint:
-
-```
-POST /capture
+## User Query
+<original query>
 ```
 
----
+### 4.3 Add Rendering Function
 
-### Tool: `search_memories`
-
-#### Arguments
-
-| Argument | Type | Description |
-|--------|------|-------------|
-| query | string | Semantic search query |
-| limit | integer | Maximum results to return |
-
-#### Implementation
-
-Calls the API endpoint:
-
+```python
+def render_structured_memory(data: dict) -> str:
+    return json.dumps(data, indent=2)
 ```
-GET /search
-```
-
----
-
-## 10. Docker Compose
-
-Docker Compose should start the following services:
-
-- `postgres`
-- `api`
-- `mcp`
-
-### Example Service Definitions
-
-```yaml
-services:
-
-  postgres:
-    image: pgvector/pgvector:pg15
-
-  api:
-    build: ./api
-
-  mcp:
-    build: ./mcp
-```
-
-### Volumes
-
-```
-postgres_data
-```
-
-### Ports
-
-| Service | Port |
-|-------|------|
-| api | 8000 |
-| mcp | 8080 |
-
----
-
-## 11. README Requirements
-
-The generated repository **must include a clear `README.md`**.
-
-### README Must Include
-
-- Project description
-- Architecture diagram
-- Prerequisites
-- Deployment instructions
-- Troubleshooting
-
-### Prerequisites
-
-- Docker installed
-- Ollama running
-
----
-
-### Quick Start Guide
-
-1. Clone the repository
-2. Copy the environment template
-
-```
-cp .env.example .env
-```
-
-3. Start the system
-
-```
-docker compose up -d
-```
-
----
-
-### Test Memory Capture
-
-```
-curl -X POST localhost:8000/capture \
-  -H "Content-Type: application/json" \
-  -d '{"content": "example memory"}'
-```
-
----
-
-### Test Semantic Search
-
-```
-curl "localhost:8000/search?query=test"
-```
-
----
-
-### MCP Client Integration
-
-Provide example MCP configuration for:
-
-- Claude Desktop
-- ChatGPT connectors
-- Other MCP-compatible clients
-
----
-
-## 12. Development Principles
-
-The coding assistant should follow these principles:
-
-- Prefer **simplicity over abstraction**
-- Avoid heavy frameworks
-- Use small, clear modules
-- Include **type hints**
-- Include **docstrings**
-- Handle failures gracefully
-- Keep the implementation **minimal and readable**
-
----
-
-## 13. Future Extensions (Not Required)
-
-The following features **should not be implemented initially**, but the architecture should allow them later:
-
-- Entity extraction
-- Knowledge graph generation
-- Matrix/Slack capture bot
-- Background summarisation
-- Multi-user authentication
-- External document ingestion
-
----
-
-## 14. Acceptance Criteria
-
-The project is considered complete when:
-
-- Docker Compose starts successfully
-- User can capture a memory
-- User can perform semantic search over stored memories
-- Embeddings are generated through Ollama
-- MCP tools work with an AI client
-- The README allows a user to deploy the project within **10 minutes**
 
 ---
 
