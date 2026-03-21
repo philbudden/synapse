@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any, Iterator
 
 from pgvector.psycopg import register_vector
 from psycopg_pool import ConnectionPool
@@ -58,3 +58,11 @@ def get_conn() -> Iterator:
             yield conn
     except Exception as e:
         raise RuntimeError(f"Database unavailable: {e}") from e
+
+
+def get_structured_memory(conn: Any, key: str) -> Any | None:
+    query = "SELECT value FROM structured_memory WHERE key = %s"
+    result = conn.execute(query, (key,)).fetchone()
+    if result is None:
+        return None
+    return result[0]

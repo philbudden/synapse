@@ -6,7 +6,7 @@ from psycopg.types.json import Json
 
 from .classify import classify_embedding
 from .config import settings
-from .db import close_pool, get_conn, init_pool
+from .db import close_pool, get_conn, get_structured_memory, init_pool
 from .embeddings import EmbeddingError, embed_text
 from .models import CaptureRequest, CaptureResponse, SearchResponse
 from .search import search_memories
@@ -100,3 +100,14 @@ def search(query: str, limit: int = 5) -> SearchResponse:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
     return SearchResponse(results=results)
+
+
+@app.get("/structured_memory/{key}")
+def fetch_structured_memory(key: str) -> dict[str, object | None]:
+    try:
+        with get_conn() as conn:
+            value = get_structured_memory(conn, key)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    return {"key": key, "value": value}
