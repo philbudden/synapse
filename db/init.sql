@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS memories (
     embedding VECTOR(768)
 );
 
+CREATE TABLE IF NOT EXISTS structured_memory (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT now()
+);
+
 -- Note: ivfflat indexes require ANALYZE for best performance.
 CREATE INDEX IF NOT EXISTS memories_embedding_idx
 ON memories
